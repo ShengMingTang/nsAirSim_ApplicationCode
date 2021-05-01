@@ -12,6 +12,8 @@ import gcs
 import uav
 import ctrl
 
+ctrl.Ctrl.SetEndTime(2.0)
+
 NS2AIRSIM_PORT_START = 5000
 AIRSIM2NS_PORT_START = 6000
 NS2AIRSIM_GCS_PORT = 4999
@@ -47,17 +49,16 @@ with open(json_path) as f:
     netConfig['uavsName'] = [key for key in settings['Vehicles']]
 
 ctrlThread = ctrl.Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, context)
-ctrlThread.sendNetConfig(netConfig)
 print('========== Parsed config ==========')
 for key in netConfig:
     print(f'{key}={netConfig[key]}')
 print('========== ============= ==========')
 
-
-
 gcsThread = gcs.Gcs(AIRSIM2NS_GCS_PORT, NS2AIRSIM_GCS_PORT, netConfig['uavsName'], context)
 uavsThread = [ uav.Uav(name, AIRSIM2NS_PORT_START+i, NS2AIRSIM_PORT_START+i, context) for i, name in enumerate(netConfig['uavsName']) ]
+uavsThread[0].throughputTest(float(sys.argv[1]))
 
+ctrlThread.sendNetConfig(netConfig)
 ctrlThread.waitForSyncStart()
 # NS will wait until AirSim sends back something from now on
 ctrlThread.start()
@@ -71,6 +72,6 @@ try:
         td.join()
 finally :
     print("Canceled")
-    ctrlThread.over()
+    # ctrlThread.over()
     print('AirSim over!')
     sys.exit()

@@ -22,7 +22,9 @@ class Uav(threading.Thread):
     # return (from, payload) if successful otherwise return None
     def Rx(self, flags=zmq.NOBLOCK):
         try:
-            s = re.findall(r"[^ ]+", self.zmqRecvSocket.recv_string(flags))
+            s = self.zmqRecvSocket.recv(flags)
+            # @@
+            # s = re.findall(r"[^ ]+", self.zmqRecvSocket.recv_string(flags))
             return s
         except zmq.Again:
             return None
@@ -35,26 +37,30 @@ class Uav(threading.Thread):
     def Tx(self, payload, flags=zmq.NOBLOCK):
         try:
             simTime = Ctrl.GetSimTime()
-
-            s = f'{simTime} {payload}'
-            self.zmqSendSocket.send(bytes(s, encoding='utf-8'), flags=flags)
-            print(f'time: {simTime}, {self.name} sends {s}')
+            s = b'%.2f %b' % (simTime, payload)
+            self.zmqSendSocket.send(s, flags=flags)
+            print('time: %.2f, %s send:%d' % (simTime, self.name, len(s)))
         except zmq.Again:
             return None
     
-    def run(self):
+    def throughputTest(self, dist=0.0):
+        self.dist = dist
+        pose = self.client.simGetVehiclePose(vehicle_name=self.name)
+        pose.position.x_val = self.dist
+        pose.position.y_val = 0
+        pose.position.z_val = 0
         self.client.enableApiControl(True, vehicle_name=self.name)
         self.client.armDisarm(True, vehicle_name=self.name)
-      
-        while True:
-            packet = self.Rx(zmq.NOBLOCK)
-            if packet:
-                address, cmd = packet
-                if cmd == 'Land':
-                    print(f'{self.name}: cmd={cmd}')
-                    self.client.landAsync(vehicle_name=self.name).join()
-                    # self.client.moveByVelocityBodyFrameAsync(1, 0, 0, 10.0, vehicle_name=self.name).join()
-                elif cmd == 'Takeoff':
-                    print(f'{self.name}: cmd={cmd}')
-                    self.client.takeoffAsync(vehicle_name=self.name).join()
-                    # self.client.moveByVelocityBodyFrameAsync(-1, 0, 0, 10.0, vehicle_name=self.name).join()
+    
+    def run(self):
+        # custom code below
+        # self.client.takeoffAsync(vehicle_name=self.name).join()
+        # self.client.moveByVelocityBodyFrameAsync(20, 0, 0, 500, vehicle_name=self.name)
+        lastTx = Ctrl.GetSimTime()
+        while Ctrl.ShouldContinue():
+            t = Ctrl.GetSimTime() 
+            if t - lastTx > 0.01:
+                response = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
+                self.Tx(bytes(response))
+                lastTx = t
+        print(self.name, ' join')

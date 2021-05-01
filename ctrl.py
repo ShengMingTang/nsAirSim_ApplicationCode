@@ -4,8 +4,10 @@ import threading
 import re
 import zmq
 import time
+import sys
 
 class Ctrl(threading.Thread):
+    endTime = 0.1
     mutexSimTime = threading.Lock()
     simTime = 0
     lastTimestamp = time.time()
@@ -20,7 +22,31 @@ class Ctrl(threading.Thread):
         self.client.simRunConsoleCommand('stat fps')
     
     @staticmethod
+    def ShouldContinue():
+        return Ctrl.GetSimTime() < Ctrl.GetEndTime()
+    
+    @staticmethod
+    def SetEndTime(endTime):
+        Ctrl.mutexSimTime.acquire()
+        Ctrl.endTime = endTime
+        Ctrl.mutexSimTime.release()
+    @staticmethod
+    def GetEndTime():
+        Ctrl.mutexSimTime.acquire()
+        temp = Ctrl.endTime
+        Ctrl.mutexSimTime.release()
+        return temp
+    
+    @staticmethod
     def GetSimTime():
+        Ctrl.mutexSimTime.acquire()
+        temp = Ctrl.simTime
+        Ctrl.mutexSimTime.release()
+        return temp
+
+    # get continuous version of time
+    @staticmethod
+    def GetFineTime():
         Ctrl.mutexSimTime.acquire()
         temp = Ctrl.simTime + (time.time() - Ctrl.lastTimestamp)
         Ctrl.mutexSimTime.release()
@@ -37,18 +63,6 @@ class Ctrl(threading.Thread):
         Ctrl.simTime = 0
         Ctrl.lastTimestamp = time.time()
         Ctrl.mutexSimTime.release()
-    
-    def over(self):
-        self.zmqSendSocket.send_string('End')
-    
-    def concatString(self, obj):
-        try:
-            s = ''
-            for dummy in obj:
-                s += self.iterableToString(dummy)
-            return s
-        except: # non-iterable
-            return f'{obj} '
 
     def sendNetConfig(self, netConfig):
         self.netConfig = netConfig
@@ -63,9 +77,12 @@ class Ctrl(threading.Thread):
         self.zmqSendSocket.send_string(s)
     
     def run(self):
-        while True:
+        while Ctrl.ShouldContinue():
             # Never wait if AirSim is assumed to be run no faster than realtime
             msg = self.zmqRecvSocket.recv()
+            if msg == 'bye':
+                Ctrl.SetEndTime(-1.0)
+                return
             
             # this will block until resumed
             self.client.simContinueForTime(self.netConfig['updateGranularity'])
@@ -74,4 +91,6 @@ class Ctrl(threading.Thread):
             Ctrl.lastTimestamp = time.time()
             Ctrl.mutexSimTime.release()
             self.zmqSendSocket.send_string('')
-            print(f'Time = {Ctrl.GetSimTime()}')
+            # print(f'Time = {Ctrl.GetSimTime()}')
+        Ctrl.SetEndTime(-1.0)
+        print('Ctrl join')

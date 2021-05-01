@@ -23,25 +23,28 @@ class Gcs(threading.Thread):
     # return (from, payload) if successful otherwise return None
     def Rx(self, flags=zmq.NOBLOCK):
         try:
-            return re.findall(r"[^ ]+", self.zmqRecvSocket.recv_string(flags))
+            return self.zmqRecvSocket.recv(flags)
+            # return re.findall(r"[^ ]+", self.zmqRecvSocket.recv_string(flags))
         except zmq.Again:
             return None
     
     # transmit payload back to GCS
     # <payload> --- <sim_time> <name> <payload>
-    def Tx(self, toName, payload):
+    def Tx(self, toName, payload, flags=zmq.NOBLOCK):
         simTime = Ctrl.GetSimTime()
-
-        s = f'{simTime} {toName} {payload}'
-        self.zmqSendSocket.send(bytes(s, encoding='utf-8'))
-        print(f'time {simTime}, GCS sends {s} to {toName}')
+        s = b'%.2f %b %b' % (simTime, toName, payload)
+        self.zmqSendSocket.send(s, flags=flags)
+        print('time: %.2f, GCS sends %d bytes to %s' % (simTime, len(s), toName))
     
     def run(self):
-        while Ctrl.GetSimTime() < 5:
-            time.sleep(0.1)
-        self.Tx("A", "Takeoff")
-        self.Tx("B", "Land")
-        while Ctrl.GetSimTime() < 10:
-            time.sleep(0.1)
-        self.Tx("A", "Land")
-        self.Tx("B", "Takeoff")
+        while Ctrl.ShouldContinue():
+            self.Rx(flags=zmq.NOBLOCK)
+        print('GCS join')
+        # while Ctrl.GetSimTime() < 3:
+        #     time.sleep(0.1)
+        # self.Tx(b"ABCD", b'Takeoff')
+        # self.Tx(b"ABCD", b'\x12\x34')
+        # print(self.Rx())
+        # while Ctrl.GetSimTime() < 10:
+        #     time.sleep(0.1)
+        # self.Tx("A", b'Land')
