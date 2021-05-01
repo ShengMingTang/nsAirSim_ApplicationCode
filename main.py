@@ -11,23 +11,13 @@ import os
 import gcs
 import uav
 import ctrl
+from ctrl import NS2AIRSIM_PORT_START, AIRSIM2NS_PORT_START, NS2AIRSIM_GCS_PORT, AIRSIM2NS_GCS_PORT, NS2AIRSIM_CTRL_PORT, AIRSIM2NS_CTRL_PORT
 
-ctrl.Ctrl.SetEndTime(2.0)
-
-NS2AIRSIM_PORT_START = 5000
-AIRSIM2NS_PORT_START = 6000
-NS2AIRSIM_GCS_PORT = 4999
-AIRSIM2NS_GCS_PORT = 4998
-NS2AIRSIM_CTRL_PORT = 8000
-AIRSIM2NS_CTRL_PORT = 8001
-
+ctrl.Ctrl.SetEndTime(2.0*1)
 context = zmq.Context()
 json_path = f'{os.getenv("HOME")}/Documents/AirSim/settings.json'
 
-
-# <- : nzmqIOthread segmentSize updateGranularity numOfCong congRate [congX congY congRho] numOfUav [name1 ]+ numOfEnb [px py pz ]+
 netConfig = {
-    'nzmqIOthread': 3,
     'segmentSize': 1448,
     'updateGranularity': 1.0,
     'numOfCong': 1.0,
@@ -38,8 +28,13 @@ netConfig = {
         [0, 0, 0],
 		[0, 1, 0]
     ],
+    "useWifi": 0,
+    "isMainLogEnabled": 1,
+	"isGcsLogEnabled": 0,
+	"isUavLogEnabled": 1,
+	"isCongLogEnabled": 0,
+	"isSyncLogEnabled": 0,
 }
-print('Warning: nzmqIOthread is set but not used')
 with open(json_path) as f:
     print(f'Using settings.json in {json_path}')
     settings = json.load(f)
@@ -47,31 +42,26 @@ with open(json_path) as f:
         if key in settings:
             netConfig[key] = settings[key]
     netConfig['uavsName'] = [key for key in settings['Vehicles']]
-
-ctrlThread = ctrl.Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, context)
 print('========== Parsed config ==========')
-for key in netConfig:
-    print(f'{key}={netConfig[key]}')
+print(netConfig)
 print('========== ============= ==========')
 
+ctrlThread = ctrl.Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, context)
 gcsThread = gcs.Gcs(AIRSIM2NS_GCS_PORT, NS2AIRSIM_GCS_PORT, netConfig['uavsName'], context)
 uavsThread = [ uav.Uav(name, AIRSIM2NS_PORT_START+i, NS2AIRSIM_PORT_START+i, context) for i, name in enumerate(netConfig['uavsName']) ]
-uavsThread[0].throughputTest(float(sys.argv[1]))
 
 ctrlThread.sendNetConfig(netConfig)
 ctrlThread.waitForSyncStart()
+
 # NS will wait until AirSim sends back something from now on
+
 ctrlThread.start()
 gcsThread.start()
 for td in uavsThread:
     td.start()
-try:
-    ctrlThread.join()
-    gcsThread.join()
-    for td in uavsThread:
-        td.join()
-finally :
-    print("Canceled")
-    # ctrlThread.over()
-    print('AirSim over!')
-    sys.exit()
+
+ctrlThread.join()
+gcsThread.join()
+for td in uavsThread:
+    td.join()
+sys.exit()

@@ -3,9 +3,9 @@ import csv
 import numpy as np
 import pandas as pd
 import math
-import pathlib
+from pathlib import Path
 
-ROOT = pathlib.Path('/home/shengming/airsimNet')
+ROOT = Path.home()/'airsimNet'
 
 times = []
 mob = []
@@ -30,6 +30,7 @@ mob = np.array(mob)
 
 # dist: [start, end, bytes]
 pSet = {}
+pDrop = {}
 sendIntervals = [[1e9, -1, 0] for i in range(len(mob))]
 recvIntervals = [[1e9, -1, 0] for i in range(len(mob))]
 sendLastIdx = 0
@@ -50,6 +51,9 @@ with open(ROOT/'nsAirSim_throughput.csv', 'r') as f:
             bt += b
             sendIntervals[sendLastIdx] = [s, e, bt]
             pSet[p] = t
+            if p not in pDrop:
+                pDrop[p] = 0
+            pDrop[p] += b
         
         
         if name == 'G' and tr == 'Rx': # count that
@@ -61,6 +65,10 @@ with open(ROOT/'nsAirSim_throughput.csv', 'r') as f:
                 e = max(e, t)
                 bt += b
                 recvIntervals[recvLastIdx] = [s, e, bt]
+            if p in pDrop:
+                pDrop[p] -= b
+
+print(pDrop)
             
                 
 

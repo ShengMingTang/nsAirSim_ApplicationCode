@@ -4,6 +4,9 @@ import zmq
 import threading
 import time
 import re
+from pathlib import Path
+import csv
+from functools import partial
 # custom import
 from ctrl import Ctrl
 
@@ -11,40 +14,52 @@ class Gcs(threading.Thread):
     def __init__(self, zmqSendPort, zmqRecvPort, uavsName, context):
         threading.Thread.__init__(self)
         # socket need to be handled outside of this scope
-        self.zmqSendSocket = context.socket(zmq.PUSH)
+        self.zmqSendSocket = context.socket(zmq.REQ)
         self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
+        self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, 1000)
+
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
         self.uavsName = uavsName
         self.client = airsim.VehicleClient()
         self.client.confirmConnection()
-    
-    # parse <from-address> <payload>
-    # return (from, payload) if successful otherwise return None
+    def Tx(self, toName, payload, flags=zmq.NOBLOCK):
+        try:
+            self.zmqSendSocket.send(b'%b %b' % (bytes(toName, encoding='utf-8'), payload), flags=flags)
+            res = self.zmqSendSocket.recv()
+            res = int.from_bytes(res, 'little')
+            return res
+        except zmq.ZMQError:
+            return -1
     def Rx(self, flags=zmq.NOBLOCK):
         try:
-            return self.zmqRecvSocket.recv(flags)
-            # return re.findall(r"[^ ]+", self.zmqRecvSocket.recv_string(flags))
-        except zmq.Again:
+            msg = self.zmqRecvSocket.recv(flags)
+            s, e = re.search(b" ", msg).span()
+            return msg[:s], msg[s:]
+        except zmq.ZMQError:
             return None
-    
-    # transmit payload back to GCS
-    # <payload> --- <sim_time> <name> <payload>
-    def Tx(self, toName, payload, flags=zmq.NOBLOCK):
-        simTime = Ctrl.GetSimTime()
-        s = b'%.2f %b %b' % (simTime, toName, payload)
-        self.zmqSendSocket.send(s, flags=flags)
-        print('time: %.2f, GCS sends %d bytes to %s' % (simTime, len(s), toName))
-    
+    def selfTest(self):
+        while Ctrl.GetSimTime() < 1.0:
+            time.sleep(0.1)
+        self.Tx('ABCD', b'I\'m GCS')
+        s = self.Rx()
+        while s == None:
+            time.sleep(0.1)
+            s = self.Rx()
+        print(f'GCS recv: {s}')
+    def throughputVsDistTest(self, filename, period=0.01, stay=2.0, step=50):
+        while Ctrl.GetSimTime() < 1.0:
+            time.sleep(0.1)
+        self.Tx('ABCD', b'I\'m GCS')
+        with open(filename, 'w', newline='') as f:
+            wrt = csv.writer(f)
+            wrt.writerow(['Time', 'who', 'ByteCount'])
+            while Ctrl.ShouldContinue():
+                whoPkt = self.Rx()
+                t = Ctrl.GetSimTime()
+                if whoPkt != None:
+                    who, pkt = whoPkt
+                    bt = len(pkt)
+                    wrt.writerow([t, who.decode('ascii'), bt])
     def run(self):
-        while Ctrl.ShouldContinue():
-            self.Rx(flags=zmq.NOBLOCK)
-        print('GCS join')
-        # while Ctrl.GetSimTime() < 3:
-        #     time.sleep(0.1)
-        # self.Tx(b"ABCD", b'Takeoff')
-        # self.Tx(b"ABCD", b'\x12\x34')
-        # print(self.Rx())
-        # while Ctrl.GetSimTime() < 10:
-        #     time.sleep(0.1)
-        # self.Tx("A", b'Land')
+        self.throughputVsDistTest(Path.home()/'airsimNet'/'gcs.csv')

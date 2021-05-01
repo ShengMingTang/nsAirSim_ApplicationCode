@@ -6,6 +6,13 @@ import zmq
 import time
 import sys
 
+NS2AIRSIM_PORT_START = 5000
+AIRSIM2NS_PORT_START = 6000
+NS2AIRSIM_GCS_PORT = 4999
+AIRSIM2NS_GCS_PORT = 4998
+NS2AIRSIM_CTRL_PORT = 8000
+AIRSIM2NS_CTRL_PORT = 8001
+
 class Ctrl(threading.Thread):
     endTime = 0.1
     mutexSimTime = threading.Lock()
@@ -15,6 +22,8 @@ class Ctrl(threading.Thread):
         threading.Thread.__init__(self)
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
+        self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, 1000)
+
         self.zmqSendSocket = context.socket(zmq.PUSH)
         self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
         self.client = airsim.MultirotorClient()
@@ -66,8 +75,10 @@ class Ctrl(threading.Thread):
 
     def sendNetConfig(self, netConfig):
         self.netConfig = netConfig
-
-        s = f'{netConfig["nzmqIOthread"]} {netConfig["segmentSize"]} {netConfig["updateGranularity"]} {netConfig["numOfCong"]} {netConfig["congRate"]} {netConfig["congArea"][0]} {netConfig["congArea"][1]} {netConfig["congArea"][2]} '
+        s = ''
+        s += f'{netConfig["useWifi"]} '
+        s += f'{netConfig["isMainLogEnabled"]} {netConfig["isGcsLogEnabled"]} {netConfig["isUavLogEnabled"]} {netConfig["isCongLogEnabled"]} {netConfig["isSyncLogEnabled"]} '
+        s += f'{netConfig["segmentSize"]} {netConfig["updateGranularity"]} {netConfig["numOfCong"]} {netConfig["congRate"]} {netConfig["congArea"][0]} {netConfig["congArea"][1]} {netConfig["congArea"][2]} '
         s += f'{len(netConfig["uavsName"])} '
         for name in netConfig["uavsName"]:
             s += f'{name} '
@@ -80,12 +91,9 @@ class Ctrl(threading.Thread):
         while Ctrl.ShouldContinue():
             # Never wait if AirSim is assumed to be run no faster than realtime
             msg = self.zmqRecvSocket.recv()
-            if msg == 'bye':
-                Ctrl.SetEndTime(-1.0)
-                return
-            
             # this will block until resumed
             self.client.simContinueForTime(self.netConfig['updateGranularity'])
+            
             Ctrl.mutexSimTime.acquire()
             Ctrl.simTime += self.netConfig['updateGranularity']
             Ctrl.lastTimestamp = time.time()
@@ -93,4 +101,4 @@ class Ctrl(threading.Thread):
             self.zmqSendSocket.send_string('')
             # print(f'Time = {Ctrl.GetSimTime()}')
         Ctrl.SetEndTime(-1.0)
-        print('Ctrl join')
+        self.zmqSendSocket.send_string(f'bye {Ctrl.GetEndTime()}')

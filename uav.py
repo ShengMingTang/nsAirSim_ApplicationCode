@@ -4,6 +4,9 @@ import zmq
 import threading
 import re
 import time
+import csv
+from pathlib import Path
+from functools import partial
 # custom import
 from ctrl import Ctrl
 
@@ -12,55 +15,59 @@ class Uav(threading.Thread):
         threading.Thread.__init__(self)
         # socket need to be handled outside of this scope
         self.name = name
-        self.zmqSendSocket = context.socket(zmq.PUSH)
+        self.zmqSendSocket = context.socket(zmq.REQ)
         self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
+        self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, 1000)
+
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
-    # parse <from-address> <payload>
-    # return (from, payload) if successful otherwise return None
-    def Rx(self, flags=zmq.NOBLOCK):
-        try:
-            s = self.zmqRecvSocket.recv(flags)
-            # @@
-            # s = re.findall(r"[^ ]+", self.zmqRecvSocket.recv_string(flags))
-            return s
-        except zmq.Again:
-            return None
-
-    # transmit payload back to GCS
-    # this function add some co-sim encoding
-    # <simTime> <payload>
-    # Packets will be transmitted only if NS has set up everything
-    # It can still be called
-    def Tx(self, payload, flags=zmq.NOBLOCK):
-        try:
-            simTime = Ctrl.GetSimTime()
-            s = b'%.2f %b' % (simTime, payload)
-            self.zmqSendSocket.send(s, flags=flags)
-            print('time: %.2f, %s send:%d' % (simTime, self.name, len(s)))
-        except zmq.Again:
-            return None
-    
-    def throughputTest(self, dist=0.0):
-        self.dist = dist
-        pose = self.client.simGetVehiclePose(vehicle_name=self.name)
-        pose.position.x_val = self.dist
-        pose.position.y_val = 0
-        pose.position.z_val = 0
         self.client.enableApiControl(True, vehicle_name=self.name)
         self.client.armDisarm(True, vehicle_name=self.name)
-    
-    def run(self):
-        # custom code below
-        # self.client.takeoffAsync(vehicle_name=self.name).join()
-        # self.client.moveByVelocityBodyFrameAsync(20, 0, 0, 500, vehicle_name=self.name)
-        lastTx = Ctrl.GetSimTime()
-        while Ctrl.ShouldContinue():
-            t = Ctrl.GetSimTime() 
-            if t - lastTx > 0.01:
-                response = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
-                self.Tx(bytes(response))
-                lastTx = t
-        print(self.name, ' join')
+    def Tx(self, payload, flags=zmq.NOBLOCK):
+        try:
+            self.zmqSendSocket.send(payload, flags=flags)
+            res = self.zmqSendSocket.recv()
+            res = int.from_bytes(res, 'little')
+            return res
+        except zmq.ZMQError:
+            return -1
+    def Rx(self, flags=zmq.NOBLOCK):
+        try:
+            return self.zmqRecvSocket.recv(flags)
+        except zmq.Again:
+            return None
+    def selfTest(self):
+        while Ctrl.GetSimTime() < 1.0:
+            time.sleep(0.1)
+        self.Tx(b'I\'mm %b' % (bytes(self.name, encoding='utf-8')))
+        s = self.Rx()
+        while s == None:
+            time.sleep(0.1)
+            s = self.Rx()
+        print(f'{self.name} recv: {s}')
+    def throughputVsDistTest(self, filename, period=1.0, stay=2.0, step=50):
+        with open(filename, 'w', newline='') as f:
+            wrt = csv.writer(f)
+            wrt.writerow(['Time', 'X', 'ByteCount'])
+            pose = self.client.simGetVehiclePose(vehicle_name=self.name)
+            pose.position.x_val = 0
+            pose.position.y_val = 0
+            pose.position.z_val = 0
+            lastTx = Ctrl.GetSimTime()
+            lastMv = lastTx
+            while Ctrl.ShouldContinue():
+                self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
+                t = Ctrl.GetSimTime()
+                if t - lastMv > stay:
+                    pose.position.x_val += step
+                    self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
+                    lastMv = t
+                if t - lastTx > period:
+                    response = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
+                    res = self.Tx(bytes(response))
+                    if res >= 0:
+                        wrt.writerow([t, pose.position.x_val, len(bytes(response))])
+    def run(self, **kwargs):
+        self.throughputVsDistTest(Path.home()/'airsimNet'/'uav.csv')
