@@ -18,17 +18,31 @@ context = zmq.Context()
 json_path = f'{os.getenv("HOME")}/Documents/AirSim/settings.json'
 
 netConfig = {
-    'segmentSize': 1448,
     'updateGranularity': 1.0,
+    
+    'segmentSize': 1448,
     'numOfCong': 1.0,
     'congRate': 1.0,
     'congArea': [0, 0, 10],
+    
+    #  uav names parsing
     'uavsName': [],
+    # enb position parsing
     'initEnbPos': [
         [0, 0, 0],
 		[0, 1, 0]
     ],
+
+    "nRbs": 6, # see https://i.imgur.com/q55uR8T.png
+    "TcpSndBufSize": 1024*70,
+    "TcpRcvBufSize": 1024*70, # as long as it is larger than one picture
+    "CqiTimerThreshold": 10,
+    "LteTxPower": 0,
+    "p2pDataRate": "10Gb/s",
+    "p2pMtu": 1500,
+    "p2pDelay": 1e-3,
     "useWifi": 0,
+    
     "isMainLogEnabled": 1,
 	"isGcsLogEnabled": 0,
 	"isUavLogEnabled": 1,

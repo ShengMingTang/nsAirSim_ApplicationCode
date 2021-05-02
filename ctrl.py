@@ -83,15 +83,24 @@ class Ctrl(threading.Thread):
     def sendNetConfig(self, netConfig):
         self.netConfig = netConfig
         s = ''
-        s += f'{netConfig["useWifi"]} '
-        s += f'{netConfig["isMainLogEnabled"]} {netConfig["isGcsLogEnabled"]} {netConfig["isUavLogEnabled"]} {netConfig["isCongLogEnabled"]} {netConfig["isSyncLogEnabled"]} '
-        s += f'{netConfig["segmentSize"]} {netConfig["updateGranularity"]} {netConfig["numOfCong"]} {netConfig["congRate"]} {netConfig["congArea"][0]} {netConfig["congArea"][1]} {netConfig["congArea"][2]} '
+        s += f'{netConfig["updateGranularity"]} {netConfig["segmentSize"]} '
+        s += f'{netConfig["numOfCong"]} {netConfig["congRate"]} {netConfig["congArea"][0]} {netConfig["congArea"][1]} {netConfig["congArea"][2]} '
+        
+        # UAVs
         s += f'{len(netConfig["uavsName"])} '
         for name in netConfig["uavsName"]:
             s += f'{name} '
+        # Enbs
         s += f'{len(netConfig["initEnbPos"])} '
         for pos in netConfig["initEnbPos"]:
             s += f'{pos[0]} {pos[1]} {pos[2]} '
+        
+        s += f'{netConfig["nRbs"]} {netConfig["TcpSndBufSize"]} {netConfig["TcpRcvBufSize"]} {netConfig["CqiTimerThreshold"]} '
+        s += f'{netConfig["LteTxPower"]} {netConfig["p2pDataRate"]} {netConfig["p2pMtu"]} {netConfig["p2pDelay"]} '
+        
+        s += f'{netConfig["useWifi"]} '
+        s += f'{netConfig["isMainLogEnabled"]} {netConfig["isGcsLogEnabled"]} {netConfig["isUavLogEnabled"]} {netConfig["isCongLogEnabled"]} {netConfig["isSyncLogEnabled"]} '
+        
         self.zmqSendSocket.send_string(s)
     
     def run(self):
