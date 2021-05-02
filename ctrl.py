@@ -5,6 +5,7 @@ import re
 import zmq
 import time
 import sys
+import heapq
 
 NS2AIRSIM_PORT_START = 5000
 AIRSIM2NS_PORT_START = 6000
@@ -23,6 +24,8 @@ class Ctrl(threading.Thread):
     simTime = 0
     lastTimestamp = time.time()
     isRunning = True
+    suspended = []
+
     def __init__(self, zmqSendPort, zmqRecvPort, context):
         threading.Thread.__init__(self)
         self.zmqRecvSocket = context.socket(zmq.PULL)
@@ -34,7 +37,26 @@ class Ctrl(threading.Thread):
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
         self.client.simRunConsoleCommand('stat fps')
-    
+    @staticmethod
+    def Wait(delay, name):
+        Ctrl.mutexSimTime.acquire()
+        cond = threading.Condition()
+        heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, name, cond))
+        Ctrl.mutexSimTime.release()
+        cond.acquire()
+        cond.wait()
+        cond.release()
+    @staticmethod
+    def NotifyWait():
+        Ctrl.mutexSimTime.acquire()
+        if len(Ctrl.suspended) > 0:
+            t, name, cond = heapq.nsmallest(1, Ctrl.suspended, key= lambda x:x[0])[0]
+            if Ctrl.simTime >= t: # wait it up
+                cond.acquire()
+                cond.notify()
+                cond.release()
+                heapq.heappop(Ctrl.suspended)
+        Ctrl.mutexSimTime.release()
     @staticmethod
     def ShouldContinue():
         return Ctrl.isRunning and Ctrl.GetSimTime() < Ctrl.GetEndTime()
@@ -102,25 +124,23 @@ class Ctrl(threading.Thread):
         s += f'{netConfig["isMainLogEnabled"]} {netConfig["isGcsLogEnabled"]} {netConfig["isUavLogEnabled"]} {netConfig["isCongLogEnabled"]} {netConfig["isSyncLogEnabled"]} '
         
         self.zmqSendSocket.send_string(s)
-    
+    def advance(self):
+        # this will block until resumed
+        self.client.simContinueForTime(self.netConfig['updateGranularity'])
+        Ctrl.mutexSimTime.acquire()
+        Ctrl.simTime += self.netConfig['updateGranularity']
+        Ctrl.lastTimestamp = time.time()
+        Ctrl.mutexSimTime.release()
+        Ctrl.NotifyWait()
     def run(self):
         while Ctrl.ShouldContinue():
             # Never wait if AirSim is assumed to be run no faster than realtime
             msg = self.zmqRecvSocket.recv()
-            # this will block until resumed
-            self.client.simContinueForTime(self.netConfig['updateGranularity'])
-            Ctrl.mutexSimTime.acquire()
-            Ctrl.simTime += self.netConfig['updateGranularity']
-            Ctrl.lastTimestamp = time.time()
-            Ctrl.mutexSimTime.release()
+            self.advance()
             self.zmqSendSocket.send_string('')
             # print(f'Time = {Ctrl.GetSimTime()}')
         Ctrl.isRunning = False
         self.zmqSendSocket.send_string('')
         self.zmqSendSocket.send_string(f'bye {Ctrl.GetEndTime()}')
         while Ctrl.ShouldContinueAndCleanUp():
-            self.client.simContinueForTime(self.netConfig['updateGranularity'])
-            Ctrl.mutexSimTime.acquire()
-            Ctrl.simTime += self.netConfig['updateGranularity']
-            Ctrl.lastTimestamp = time.time()
-            Ctrl.mutexSimTime.release()
+            self.advance()

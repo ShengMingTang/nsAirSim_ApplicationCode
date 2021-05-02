@@ -6,6 +6,7 @@ import time
 import re
 from pathlib import Path
 import csv
+import sys
 from functools import partial
 # custom import
 from ctrl import Ctrl
@@ -23,13 +24,14 @@ class Gcs(threading.Thread):
         self.uavsName = uavsName
         self.client = airsim.VehicleClient()
         self.client.confirmConnection()
+        self.name = 'GCS'
         
         self.kwargs = kwargs
     def Tx(self, toName, payload, flags=zmq.NOBLOCK):
         try:
             self.zmqSendSocket.send(b'%b %b' % (bytes(toName, encoding='utf-8'), payload), flags=flags)
             res = self.zmqSendSocket.recv()
-            res = int.from_bytes(res, 'little', signed=True)
+            res = int.from_bytes(res, sys.byteorder, signed=True)
             return res
         except zmq.ZMQError:
             return -1
@@ -41,8 +43,7 @@ class Gcs(threading.Thread):
         except zmq.ZMQError:
             return None
     def selfTest(self):
-        while Ctrl.GetSimTime() < 1.0:
-            time.sleep(0.1)
+        Ctrl.Wait(1.0, self.name)
         self.Tx('ABCD', b'I\'m GCS')
         s = self.Rx()
         while s == None:
@@ -70,5 +71,5 @@ class Gcs(threading.Thread):
         print(f'{dist} GCS recv {total}, throughput = {total*8/1000/1000/Ctrl.GetEndTime()}')
     def run(self):
         # self.throughputVsDistTest(Path.home()/'airsimNet'/'gcs.csv')
-        self.staticThroughputTest(**self.kwargs)
-        # self.selfTest()
+        # self.staticThroughputTest(**self.kwargs)
+        self.selfTest()

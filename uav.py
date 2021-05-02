@@ -6,6 +6,7 @@ import re
 import time
 import csv
 from pathlib import Path
+import sys
 from functools import partial
 # custom import
 from ctrl import Ctrl
@@ -31,7 +32,7 @@ class Uav(threading.Thread):
         try:
             self.zmqSendSocket.send(payload, flags=flags)
             res = self.zmqSendSocket.recv()
-            res = int.from_bytes(res, 'little', signed=True)
+            res = int.from_bytes(res, sys.byteorder, signed=True)
             return res
         except zmq.ZMQError:
             return -1
@@ -41,8 +42,8 @@ class Uav(threading.Thread):
         except zmq.Again:
             return None
     def selfTest(self):
-        while Ctrl.GetSimTime() < 1.0:
-            time.sleep(0.1)
+        Ctrl.Wait(1.0, self.name)
+        print(f'{self.name} test at {Ctrl.GetSimTime()}')
         self.Tx(b'I\'m %b' % (bytes(self.name, encoding='utf-8')))
         s = self.Rx()
         while s == None:
@@ -91,5 +92,5 @@ class Uav(threading.Thread):
         print(f'{dist} {self.name} trans {total}, throughput = {total*8/1000/1000/Ctrl.GetEndTime()}')
     def run(self, **kwargs):
         # self.throughputVsDistTest(Path.home()/'airsimNet'/'uav.csv')
-        self.staticThroughputTest(**self.kwargs)
-        # self.selfTest()
+        # self.staticThroughputTest(**self.kwargs)
+        self.selfTest()
