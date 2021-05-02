@@ -91,5 +91,5 @@ class Uav(threading.Thread):
         print(f'{dist} {self.name} trans {total}, throughput = {total*8/1000/1000/Ctrl.GetEndTime()}')
     def run(self, **kwargs):
         # self.throughputVsDistTest(Path.home()/'airsimNet'/'uav.csv')
-        # self.staticThroughputTest(**self.kwargs)
-        self.selfTest()
+        self.staticThroughputTest(**self.kwargs)
+        # self.selfTest()

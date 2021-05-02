@@ -70,5 +70,5 @@ class Gcs(threading.Thread):
         print(f'{dist} GCS recv {total}, throughput = {total*8/1000/1000/Ctrl.GetEndTime()}')
     def run(self):
         # self.throughputVsDistTest(Path.home()/'airsimNet'/'gcs.csv')
-        # self.staticThroughputTest(**self.kwargs)
-        self.selfTest()
+        self.staticThroughputTest(**self.kwargs)
+        # self.selfTest()
