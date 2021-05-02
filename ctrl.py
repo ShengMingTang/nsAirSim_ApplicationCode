@@ -50,12 +50,19 @@ class Ctrl(threading.Thread):
     def NotifyWait():
         Ctrl.mutexSimTime.acquire()
         if len(Ctrl.suspended) > 0:
-            t, name, cond = heapq.nsmallest(1, Ctrl.suspended, key= lambda x:x[0])[0]
-            if Ctrl.simTime >= t: # wait it up
-                cond.acquire()
-                cond.notify()
-                cond.release()
-                heapq.heappop(Ctrl.suspended)
+            if Ctrl.isRunning: # maintain delay
+                t, name, cond = heapq.nsmallest(1, Ctrl.suspended, key= lambda x:x[0])[0]
+                if Ctrl.simTime >= t: # wait it up
+                    cond.acquire()
+                    cond.notify()
+                    cond.release()
+                    heapq.heappop(Ctrl.suspended)
+            else: # resume all
+                while len(Ctrl.suspended) > 0:
+                    t, name, cond = heapq.heappop(Ctrl.suspended)
+                    cond.acquire()
+                    cond.notify()
+                    cond.release()
         Ctrl.mutexSimTime.release()
     @staticmethod
     def ShouldContinue():
@@ -144,3 +151,4 @@ class Ctrl(threading.Thread):
         self.zmqSendSocket.send_string(f'bye {Ctrl.GetEndTime()}')
         while Ctrl.ShouldContinueAndCleanUp():
             self.advance()
+        Ctrl.NotifyWait()
