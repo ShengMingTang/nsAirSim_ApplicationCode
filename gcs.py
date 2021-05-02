@@ -11,7 +11,7 @@ from functools import partial
 from ctrl import Ctrl
 
 class Gcs(threading.Thread):
-    def __init__(self, zmqSendPort, zmqRecvPort, uavsName, context):
+    def __init__(self, zmqSendPort, zmqRecvPort, uavsName, context, **kwargs):
         threading.Thread.__init__(self)
         # socket need to be handled outside of this scope
         self.zmqSendSocket = context.socket(zmq.REQ)
@@ -23,11 +23,13 @@ class Gcs(threading.Thread):
         self.uavsName = uavsName
         self.client = airsim.VehicleClient()
         self.client.confirmConnection()
+        
+        self.kwargs = kwargs
     def Tx(self, toName, payload, flags=zmq.NOBLOCK):
         try:
             self.zmqSendSocket.send(b'%b %b' % (bytes(toName, encoding='utf-8'), payload), flags=flags)
             res = self.zmqSendSocket.recv()
-            res = int.from_bytes(res, 'little')
+            res = int.from_bytes(res, 'little', signed=True)
             return res
         except zmq.ZMQError:
             return -1
@@ -35,7 +37,7 @@ class Gcs(threading.Thread):
         try:
             msg = self.zmqRecvSocket.recv(flags)
             s, e = re.search(b" ", msg).span()
-            return msg[:s], msg[s:]
+            return msg[:s], msg[s+1:]
         except zmq.ZMQError:
             return None
     def selfTest(self):
@@ -47,10 +49,7 @@ class Gcs(threading.Thread):
             time.sleep(0.1)
             s = self.Rx()
         print(f'GCS recv: {s}')
-    def throughputVsDistTest(self, filename, period=0.01, stay=2.0, step=50):
-        while Ctrl.GetSimTime() < 1.0:
-            time.sleep(0.1)
-        self.Tx('ABCD', b'I\'m GCS')
+    def throughputVsDistTest(self, filename):
         with open(filename, 'w', newline='') as f:
             wrt = csv.writer(f)
             wrt.writerow(['Time', 'who', 'ByteCount'])
@@ -61,5 +60,15 @@ class Gcs(threading.Thread):
                     who, pkt = whoPkt
                     bt = len(pkt)
                     wrt.writerow([t, who.decode('ascii'), bt])
+    def staticThroughputTest(self,dist):
+        total = 0
+        while Ctrl.ShouldContinueAndCleanUp():
+            whoPkt = self.Rx()
+            if whoPkt != None:
+                who, pkt = whoPkt
+                total += len(pkt)
+        print(f'{dist} GCS recv {total}, throughput = {total*8/1000/1000/Ctrl.GetEndTime()}')
     def run(self):
-        self.throughputVsDistTest(Path.home()/'airsimNet'/'gcs.csv')
+        # self.throughputVsDistTest(Path.home()/'airsimNet'/'gcs.csv')
+        # self.staticThroughputTest(**self.kwargs)
+        self.selfTest()

@@ -13,7 +13,7 @@ import uav
 import ctrl
 from ctrl import NS2AIRSIM_PORT_START, AIRSIM2NS_PORT_START, NS2AIRSIM_GCS_PORT, AIRSIM2NS_GCS_PORT, NS2AIRSIM_CTRL_PORT, AIRSIM2NS_CTRL_PORT
 
-ctrl.Ctrl.SetEndTime(2.0*1)
+ctrl.Ctrl.SetEndTime(5.0)
 context = zmq.Context()
 json_path = f'{os.getenv("HOME")}/Documents/AirSim/settings.json'
 
@@ -47,8 +47,9 @@ print(netConfig)
 print('========== ============= ==========')
 
 ctrlThread = ctrl.Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, context)
-gcsThread = gcs.Gcs(AIRSIM2NS_GCS_PORT, NS2AIRSIM_GCS_PORT, netConfig['uavsName'], context)
-uavsThread = [ uav.Uav(name, AIRSIM2NS_PORT_START+i, NS2AIRSIM_PORT_START+i, context) for i, name in enumerate(netConfig['uavsName']) ]
+kwargs = {"dist":2000}
+gcsThread = gcs.Gcs(AIRSIM2NS_GCS_PORT, NS2AIRSIM_GCS_PORT, netConfig['uavsName'], context, **kwargs)
+uavsThread = [ uav.Uav(name, AIRSIM2NS_PORT_START+i, NS2AIRSIM_PORT_START+i, context, **kwargs) for i, name in enumerate(netConfig['uavsName']) ]
 
 ctrlThread.sendNetConfig(netConfig)
 ctrlThread.waitForSyncStart()
