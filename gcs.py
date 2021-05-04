@@ -50,6 +50,9 @@ class Gcs(threading.Thread):
         while s == None:
             time.sleep(0.1)
             s = self.Rx()
+        while s == None:
+            time.sleep(0.1)
+            s = self.Rx()
         print(f'GCS recv: {s}')
     def throughputVsDistTest(self, filename, **kwargs):
         with open(filename, 'w', newline='') as f:
