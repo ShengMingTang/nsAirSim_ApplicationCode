@@ -6,6 +6,7 @@ import zmq
 import time
 import sys
 import heapq
+import json
 
 NS2AIRSIM_PORT_START = 5000
 AIRSIM2NS_PORT_START = 6000
@@ -25,12 +26,12 @@ class Ctrl(threading.Thread):
     lastTimestamp = time.time()
     isRunning = True
     suspended = []
+    sn = 0 # serial number
 
     def __init__(self, zmqSendPort, zmqRecvPort, context):
         threading.Thread.__init__(self)
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
-        self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, 1000)
 
         self.zmqSendSocket = context.socket(zmq.PUSH)
         self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
@@ -38,10 +39,11 @@ class Ctrl(threading.Thread):
         self.client.confirmConnection()
         self.client.simRunConsoleCommand('stat fps')
     @staticmethod
-    def Wait(delay, name):
+    def Wait(delay):
         Ctrl.mutexSimTime.acquire()
         cond = threading.Condition()
-        heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, name, cond))
+        heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
+        Ctrl.sn += 1
         Ctrl.mutexSimTime.release()
         cond.acquire()
         cond.wait()
@@ -49,20 +51,19 @@ class Ctrl(threading.Thread):
     @staticmethod
     def NotifyWait():
         Ctrl.mutexSimTime.acquire()
-        if len(Ctrl.suspended) > 0:
-            if Ctrl.isRunning: # maintain delay
-                t, name, cond = heapq.nsmallest(1, Ctrl.suspended, key= lambda x:x[0])[0]
-                if Ctrl.simTime >= t: # wait it up
-                    cond.acquire()
-                    cond.notify()
-                    cond.release()
-                    heapq.heappop(Ctrl.suspended)
-            else: # resume all
-                while len(Ctrl.suspended) > 0:
-                    t, name, cond = heapq.heappop(Ctrl.suspended)
-                    cond.acquire()
-                    cond.notify()
-                    cond.release()
+        if Ctrl.isRunning: # maintain delay
+            while len(Ctrl.suspended) > 0 and Ctrl.simTime >= Ctrl.suspended[0][0]:
+                t, sn, cond = Ctrl.suspended[0]
+                cond.acquire()
+                cond.notify()
+                cond.release()
+                heapq.heappop(Ctrl.suspended)
+        else: # resume all
+            while len(Ctrl.suspended) > 0:
+                t, sn, cond = heapq.heappop(Ctrl.suspended)
+                cond.acquire()
+                cond.notify()
+                cond.release()
         Ctrl.mutexSimTime.release()
     @staticmethod
     def ShouldContinue():
@@ -109,8 +110,55 @@ class Ctrl(threading.Thread):
         Ctrl.simTime = 0
         Ctrl.lastTimestamp = time.time()
         Ctrl.mutexSimTime.release()
-    def sendNetConfig(self, netConfig):
-        self.netConfig = netConfig
+    def sendNetConfig(self, json_path):
+        netConfig = {
+            'updateGranularity': 0.01,
+            
+            'segmentSize': 1448,
+            'numOfCong': 1.0,
+            'congRate': 1.0,
+            'congArea': [0, 0, 10],
+            
+            #  uav names parsing
+            'uavsName': [],
+            # enb position parsing
+            'initEnbPos': [
+                [0, 0, 0]
+            ],
+
+            "nRbs": 6, # see https://i.imgur.com/q55uR8T.png
+            "TcpSndBufSize": 71680,
+            "TcpRcvBufSize": 71680, # as long as it is larger than one picture
+            "CqiTimerThreshold": 10,
+            "LteTxPower": 0,
+            "p2pDataRate": "10Gb/s",
+            "p2pMtu": 1500,
+            "p2pDelay": 1e-3,
+            "useWifi": 0,
+            
+            "isMainLogEnabled": 1,
+            "isGcsLogEnabled": 0,
+            "isUavLogEnabled": 0,
+            "isCongLogEnabled": 0,
+            "isSyncLogEnabled": 0,
+
+            # var not sent
+            "endTime":5.0
+        }
+        # overwrite default settings
+        with open(json_path) as f:
+            print(f'Using settings.json in {json_path}')
+            settings = json.load(f)
+            for key in netConfig:
+                if key in settings:
+                    netConfig[key] = settings[key]
+            netConfig['uavsName'] = [key for key in settings['Vehicles']]
+        print('========== Parsed config ==========')
+        print(netConfig)
+        print('========== ============= ==========')
+
+        # preparing for sending to NS
+
         s = ''
         s += f'{netConfig["updateGranularity"]} {netConfig["segmentSize"]} '
         s += f'{netConfig["numOfCong"]} {netConfig["congRate"]} {netConfig["congArea"][0]} {netConfig["congArea"][1]} {netConfig["congArea"][2]} '
@@ -131,24 +179,24 @@ class Ctrl(threading.Thread):
         s += f'{netConfig["isMainLogEnabled"]} {netConfig["isGcsLogEnabled"]} {netConfig["isUavLogEnabled"]} {netConfig["isCongLogEnabled"]} {netConfig["isSyncLogEnabled"]} '
         
         self.zmqSendSocket.send_string(s)
+        self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, int(10*1000*netConfig["updateGranularity"]))
+        self.netConfig = netConfig
+        Ctrl.SetEndTime(netConfig["endTime"])
+        return netConfig
     def advance(self):
         # this will block until resumed
+        msg = self.zmqRecvSocket.recv()
+        Ctrl.NotifyWait()
         self.client.simContinueForTime(self.netConfig['updateGranularity'])
         Ctrl.mutexSimTime.acquire()
         Ctrl.simTime += self.netConfig['updateGranularity']
         Ctrl.lastTimestamp = time.time()
+        self.zmqSendSocket.send_string('')
+        # print(f'Time = {Ctrl.GetSimTime()}')
         Ctrl.mutexSimTime.release()
-        Ctrl.NotifyWait()
     def run(self):
         while Ctrl.ShouldContinue():
-            # Never wait if AirSim is assumed to be run no faster than realtime
-            msg = self.zmqRecvSocket.recv()
             self.advance()
-            self.zmqSendSocket.send_string('')
-            # print(f'Time = {Ctrl.GetSimTime()}')
         Ctrl.isRunning = False
-        self.zmqSendSocket.send_string('')
         self.zmqSendSocket.send_string(f'bye {Ctrl.GetEndTime()}')
-        while Ctrl.ShouldContinueAndCleanUp():
-            self.advance()
-        Ctrl.NotifyWait()
+        

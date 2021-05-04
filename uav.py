@@ -41,8 +41,8 @@ class Uav(threading.Thread):
             return self.zmqRecvSocket.recv(flags)
         except zmq.Again:
             return None
-    def selfTest(self):
-        Ctrl.Wait(1.0, self.name)
+    def selfTest(self, **kwargs):
+        Ctrl.Wait(1.0)
         print(f'{self.name} test at {Ctrl.GetSimTime()}')
         self.Tx(b'I\'m %b' % (bytes(self.name, encoding='utf-8')))
         s = self.Rx()
@@ -50,7 +50,7 @@ class Uav(threading.Thread):
             time.sleep(0.1)
             s = self.Rx()
         print(f'{self.name} recv: {s}')
-    def throughputVsDistTest(self, filename, period=0.01, stay=1.0, step=50):
+    def throughputVsDistTest(self, filename, period=0.01, stay=1.0, step=50, **kwargs):
         with open(filename, 'w', newline='') as f:
             wrt = csv.writer(f)
             wrt.writerow(['Time', 'X', 'ByteCount'])
@@ -74,7 +74,7 @@ class Uav(threading.Thread):
                     res = self.Tx(bytes(response))
                     if res >= 0:
                         wrt.writerow([t, pose.position.x_val, len(bytes(response)), res])
-    def staticThroughputTest(self,dist, period=0.01):
+    def staticThroughputTest(self,dist, period=0.01, **kwargs):
         total = 0
         pose = self.client.simGetVehiclePose(vehicle_name=self.name)
         pose.position.x_val = dist
@@ -93,4 +93,4 @@ class Uav(threading.Thread):
     def run(self, **kwargs):
         # self.throughputVsDistTest(Path.home()/'airsimNet'/'uav.csv')
         # self.staticThroughputTest(**self.kwargs)
-        self.selfTest()
+        self.selfTest(**self.kwargs)
