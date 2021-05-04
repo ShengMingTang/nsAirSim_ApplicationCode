@@ -44,7 +44,8 @@ class Gcs(threading.Thread):
             return None
     def selfTest(self, **kwargs):
         Ctrl.Wait(1.0)
-        self.Tx('ABCD', b'I\'m GCS')
+        self.Tx('A', b'I\'m GCS')
+        self.Tx('B', b'I\'m GCS')
         s = self.Rx()
         while s == None:
             time.sleep(0.1)

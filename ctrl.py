@@ -8,6 +8,7 @@ import sys
 import heapq
 import json
 
+# Theses vars correspond to AirSimSync.h
 NS2AIRSIM_PORT_START = 5000
 AIRSIM2NS_PORT_START = 6000
 NS2AIRSIM_GCS_PORT = 4999
@@ -17,8 +18,57 @@ AIRSIM2NS_CTRL_PORT = 8001
 GCS_APP_START_TIME = 0.1
 UAV_APP_START_TIME = 0.2
 
-CLEAN_UP_TIME = 1.0
+'''
+Remember to reopen AirSim if non-ns3 part is modified
 
+default settings.json
+{
+	"SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/master/docs/settings.md",
+	"SettingsVersion": 1.2,
+	"SimMode": "Multirotor",
+	"ClockSpeed": 1,
+	
+	"Vehicles": {
+		"A": {
+		  "VehicleType": "SimpleFlight",
+		  "X": 0, "Y": 0, "Z": 0
+		},
+		"B": {
+		"VehicleType": "SimpleFlight",
+		"X": 1, "Y": 0, "Z": 0
+		}
+    },
+
+	"updateGranularity": 0.01,
+            
+	"segmentSize": 1448,
+	"numOfCong": 0,
+	"congRate": 1.0,
+	"congArea": [0, 0, 10],
+	
+	"initEnbApPos": [
+		[0, 0, 0]
+	],
+
+	"nRbs": 6,
+	"TcpSndBufSize": 71680,
+	"TcpRcvBufSize": 71680,
+	"CqiTimerThreshold": 10,
+	"LteTxPower": 0,
+	"p2pDataRate": "10Gb/s",
+	"p2pMtu": 1500,
+	"p2pDelay": 1e-3,
+	"useWifi": 1,
+	
+	"isMainLogEnabled": 1,
+	"isGcsLogEnabled": 1,
+	"isUavLogEnabled": 1,
+	"isCongLogEnabled": 0,
+	"isSyncLogEnabled": 0,
+
+	"endTime":5.0
+}
+'''
 class Ctrl(threading.Thread):
     endTime = 0.1
     mutexSimTime = threading.Lock()
@@ -68,11 +118,7 @@ class Ctrl(threading.Thread):
     @staticmethod
     def ShouldContinue():
         return Ctrl.isRunning and Ctrl.GetSimTime() < Ctrl.GetEndTime()
-    @staticmethod
-    # Extra cleanup time is granted for cleaning its receiving buffer 
-    def ShouldContinueAndCleanUp():
-        return Ctrl.GetSimTime() < Ctrl.GetEndTime() + CLEAN_UP_TIME
-    
+   
     @staticmethod
     def SetEndTime(endTime):
         Ctrl.mutexSimTime.acquire()
@@ -122,7 +168,7 @@ class Ctrl(threading.Thread):
             #  uav names parsing
             'uavsName': [],
             # enb position parsing
-            'initEnbPos': [
+            'initEnbApPos': [
                 [0, 0, 0]
             ],
 
@@ -137,8 +183,8 @@ class Ctrl(threading.Thread):
             "useWifi": 0,
             
             "isMainLogEnabled": 1,
-            "isGcsLogEnabled": 0,
-            "isUavLogEnabled": 0,
+            "isGcsLogEnabled": 1,
+            "isUavLogEnabled": 1,
             "isCongLogEnabled": 0,
             "isSyncLogEnabled": 0,
 
@@ -168,8 +214,8 @@ class Ctrl(threading.Thread):
         for name in netConfig["uavsName"]:
             s += f'{name} '
         # Enbs
-        s += f'{len(netConfig["initEnbPos"])} '
-        for pos in netConfig["initEnbPos"]:
+        s += f'{len(netConfig["initEnbApPos"])} '
+        for pos in netConfig["initEnbApPos"]:
             s += f'{pos[0]} {pos[1]} {pos[2]} '
         
         s += f'{netConfig["nRbs"]} {netConfig["TcpSndBufSize"]} {netConfig["TcpRcvBufSize"]} {netConfig["CqiTimerThreshold"]} '
