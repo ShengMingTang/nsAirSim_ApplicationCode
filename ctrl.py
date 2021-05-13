@@ -7,7 +7,7 @@ import time
 import sys
 import heapq
 import json
-
+import math
 # Theses vars correspond to AirSimSync.h
 NS2AIRSIM_PORT_START = 5000
 AIRSIM2NS_PORT_START = 6000
@@ -70,7 +70,14 @@ default settings.json
 }
 '''
 class Ctrl(threading.Thread):
-    endTime = 0.1
+    '''
+    Usage:
+    ctrlThread = ctrl.Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, zmq_context)
+    netConfig = ctrlThread.sendNetConfig(json_path)
+    ctrlThread.waitForSyncStart()
+    ctrlThread.join()
+    '''
+    endTime = math.inf
     mutexSimTime = threading.Lock()
     simTime = 0
     lastTimestamp = time.time()
@@ -79,6 +86,11 @@ class Ctrl(threading.Thread):
     sn = 0 # serial number
 
     def __init__(self, zmqSendPort, zmqRecvPort, context):
+        '''
+        Control the pace of simulation
+        Note that there should be only 1 instance of this class
+        since some of the feature is static
+        '''
         threading.Thread.__init__(self)
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
@@ -90,16 +102,28 @@ class Ctrl(threading.Thread):
         self.client.simRunConsoleCommand('stat fps')
     @staticmethod
     def Wait(delay):
+        '''
+        Let the calling thread wait the specified amount of time
+        Reutrn immediately if this thread is not running
+        '''
         Ctrl.mutexSimTime.acquire()
-        cond = threading.Condition()
-        heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
-        Ctrl.sn += 1
-        Ctrl.mutexSimTime.release()
-        cond.acquire()
-        cond.wait()
-        cond.release()
+        if Ctrl.isRunning is False:
+            Ctrl.mutexSimTime.release()
+        else:
+            cond = threading.Condition()
+            heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
+            Ctrl.sn += 1
+            Ctrl.mutexSimTime.release()
+            cond.acquire()
+            cond.wait()
+            cond.release()
     @staticmethod
     def NotifyWait():
+        '''
+        internal use only
+        notfiy the waiting thread if delay is expired
+        notify every waiting if simulation is not running
+        '''
         Ctrl.mutexSimTime.acquire()
         if Ctrl.isRunning: # maintain delay
             while len(Ctrl.suspended) > 0 and Ctrl.simTime >= Ctrl.suspended[0][0]:
@@ -117,6 +141,9 @@ class Ctrl(threading.Thread):
         Ctrl.mutexSimTime.release()
     @staticmethod
     def ShouldContinue():
+        '''
+        All threads should call this to check whether simulation is still running
+        '''
         return Ctrl.isRunning and Ctrl.GetSimTime() < Ctrl.GetEndTime()
    
     @staticmethod
@@ -133,21 +160,28 @@ class Ctrl(threading.Thread):
         return temp
     @staticmethod
     def GetSimTime():
+        '''
+        Retreive the clock maintained by this thread
+        '''
         Ctrl.mutexSimTime.acquire()
         temp = Ctrl.simTime
         Ctrl.mutexSimTime.release()
         return temp
-    # get continuous version of time
     @staticmethod
     def GetFineTime():
+        '''
+        get continuous version of time
+        '''
         Ctrl.mutexSimTime.acquire()
         temp = Ctrl.simTime + (time.time() - Ctrl.lastTimestamp)
         Ctrl.mutexSimTime.release()
         return temp
-
-    # to synchronize start
-    # Corresponds to nsAirSimBegin() in AirSimSync.cc
+    
     def waitForSyncStart(self):
+        '''
+        to synchronize start
+        Corresponds to nsAirSimBegin() in AirSimSync.cc
+        '''
         self.zmqRecvSocket.recv()
         self.client.reset()
         self.client.simPause(False)
@@ -157,6 +191,9 @@ class Ctrl(threading.Thread):
         Ctrl.lastTimestamp = time.time()
         Ctrl.mutexSimTime.release()
     def sendNetConfig(self, json_path):
+        '''
+        send network configuration to and config ns
+        '''
         netConfig = {
             'updateGranularity': 0.01,
             
@@ -230,6 +267,9 @@ class Ctrl(threading.Thread):
         Ctrl.SetEndTime(netConfig["endTime"])
         return netConfig
     def advance(self):
+        '''
+        advace the simulation by a small step
+        '''
         # this will block until resumed
         msg = self.zmqRecvSocket.recv()
         Ctrl.NotifyWait()
@@ -241,6 +281,9 @@ class Ctrl(threading.Thread):
         # print(f'Time = {Ctrl.GetSimTime()}')
         Ctrl.mutexSimTime.release()
     def run(self):
+        '''
+        control and advance the whole simulation
+        '''
         while Ctrl.ShouldContinue():
             self.advance()
         Ctrl.isRunning = False

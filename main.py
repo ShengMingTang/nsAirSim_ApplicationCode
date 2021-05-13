@@ -1,18 +1,17 @@
 import setup_path
 import airsim
 import zmq
-import re
-import time
 import threading
 import sys
-import json
-import os
+import queue
 from pathlib import Path
+
 # custom import 
-import gcs
-import uav
+from app import GcsApp, UavApp
 import ctrl
 from ctrl import NS2AIRSIM_PORT_START, AIRSIM2NS_PORT_START, NS2AIRSIM_GCS_PORT, AIRSIM2NS_GCS_PORT, NS2AIRSIM_CTRL_PORT, AIRSIM2NS_CTRL_PORT
+import matplotlib.pyplot as plt
+import numpy as np
 
 kwargs = {"dist":0}
 
@@ -21,8 +20,10 @@ json_path = Path.home()/'Documents'/'AirSim'/'settings.json'
 
 ctrlThread = ctrl.Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, context)
 netConfig = ctrlThread.sendNetConfig(json_path)
-gcsThread = gcs.Gcs(AIRSIM2NS_GCS_PORT, NS2AIRSIM_GCS_PORT, netConfig['uavsName'], context, **kwargs)
-uavsThread = [ uav.Uav(name, AIRSIM2NS_PORT_START+i, NS2AIRSIM_PORT_START+i, context, **kwargs) for i, name in enumerate(netConfig['uavsName']) ]
+
+
+gcsThread = GcsApp(isAddressPrefixed=True, zmqSendPort=AIRSIM2NS_GCS_PORT, zmqRecvPort=NS2AIRSIM_GCS_PORT, context=context)
+uavsThread = [ UavApp(name=name, isAddressPrefixed=False, zmqSendPort=AIRSIM2NS_PORT_START+i, zmqRecvPort=NS2AIRSIM_PORT_START+i, context=context, **kwargs) for i, name in enumerate(netConfig['uavsName']) ]
 
 ctrlThread.waitForSyncStart()
 
@@ -31,10 +32,12 @@ ctrlThread.waitForSyncStart()
 ctrlThread.start()
 gcsThread.start()
 for td in uavsThread:
-    td.start()
+    td.start()      
 
 ctrlThread.join()
 gcsThread.join()
 for td in uavsThread:
     td.join()
+
+plt.clf()
 sys.exit()
