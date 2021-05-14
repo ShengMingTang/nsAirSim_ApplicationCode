@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from appProtocolBase import AppSerializer, MsgBase, MsgRaw
 from ctrl import Ctrl
 from appBase import AppBase
-from msg import MsgImg, MsgSerializers
+from msg import MsgImg
 
 '''
 Custom App code
@@ -30,40 +30,42 @@ class UavApp(AppBase, threading.Thread):
         Basic utility test including Tx, Rx, MsgRaw
         paired with GcsApp.selfTest()
         '''
-        Ctrl.Wait(1.0)
+        print(f'{self.name} is testing')
         msg = MsgRaw(b'I\'m %b' % (bytes(self.name, encoding='utf-8')))
-        # msg = MsgImg(np.zeros((3,3), dtype=np.uint8), 0.0)
-        res = -1
-        while res == -1:
-            res = self.Tx(msg)
+        # while self.Tx(msg) is False:
+        #     print(f'{self.name} trans fail')
+        # print(f'{self.name} trans msg')
         reply = None
-        while Ctrl.ShouldContinue() and reply is None:
+        while Ctrl.ShouldContinue():
+            time.sleep(0.1)
             reply = self.Rx()
-        if reply is not None:
-            t, d = reply
-            reply = MsgSerializers[t].Deserialize(d)
-            print(f'{self.name} recv: {reply}')
+            if reply is not None:
+                print(f'{self.name} recv: {reply}')
+            else:
+                # print(f'{self.name} recv: {reply}')
+                pass
     def staticThroughputTest(self, dist, period=0.01, **kwargs):
         '''
         Run throughput test at application level
         dist argument must be specified
         paired with GcsApp.staticThroughputTest()
         '''
+        t0 = Ctrl.GetSimTime()
         total = 0
         pose = self.client.simGetVehiclePose(vehicle_name=self.name)
         pose.position.x_val = dist
         lastTx = Ctrl.GetSimTime()
         msg = MsgRaw(bytes(50*1024))
         self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
-        delay = 1.0
-        Ctrl.Wait(delay)
         while Ctrl.ShouldContinue():
-            t = Ctrl.GetSimTime()
-            if t - lastTx > period:
-                res = self.Tx(msg)
-                if res >= 0:
-                    total += res
-        print(f'{dist} {self.name} trans {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-delay)}')
+            print('wait begin')
+            Ctrl.Wait(0.01)
+            print('wait end')
+            res = self.Tx(msg)
+            if res is True:
+                total += len(msg.data)
+        t1 = Ctrl.GetSimTime()
+        print(f'{dist} {self.name} trans {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-(t1-t0))}')
     def streamingTest(self, **kwargs):
         '''
         Test Msg Level streaming back to GCS
@@ -71,7 +73,6 @@ class UavApp(AppBase, threading.Thread):
         self.client.enableApiControl(True, vehicle_name=self.name)
         self.client.armDisarm(True, vehicle_name=self.name)
         
-        Ctrl.Wait(1.0)
         # self.client.takeoffAsync(vehicle_name=self.name).join()
         # self.client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
         while Ctrl.ShouldContinue():
@@ -82,11 +83,17 @@ class UavApp(AppBase, threading.Thread):
             res = self.Tx(msg)
             # print(f'res = {res}')
     def run(self, **kwargs):
+        Ctrl.Wait(1.0)
+        self.sendThread.start()
         self.recvThread.start()
-        self.selfTest(**self.kwargs)
-        # self.staticThroughputTest(**self.kwargs)
+        
+        # self.selfTest(**self.kwargs)
+        self.staticThroughputTest(**self.kwargs)
         # self.streamingTest(**self.kwargs)
+        
+        self.sendThread.setStopFlag()
         self.recvThread.setStopFlag()
+        self.sendThread.join()
         self.recvThread.join()
         print(f'{self.name} joined')
         
@@ -103,39 +110,35 @@ class GcsApp(AppBase, threading.Thread):
         Basic utility test including Tx, Rx, MsgRaw
         paired with UavApp.selfTest()
         '''
-        Ctrl.Wait(1.0)
-        res = -1
-        while res == -1:
-            res = self.Tx(b'I\'m GCS', 'A')
-        print(f'GCS trans to A with res {res}')
-        res = -1
-        while res == -1:
-            res = self.Tx(b'I\'m GCS', 'B')
-        print(f'GCS trans to B with res {res}')
+        print(f'{self.name} is testing')
+        msg = MsgRaw(b'I\'m GCS')
+        while self.Tx(msg, 'A') is False:
+            time.sleep(0.1)
+        print(f'GCS trans to A')
+        while self.Tx(msg, 'B') is False:
+            time.sleep(0.1)
+        print(f'GCS trans to B')
         while Ctrl.ShouldContinue():
             reply = self.Rx()
             if reply is None:
                 time.sleep(0.1)
             else:
-                name, msg = reply
-                t, d = msg
-                reply = MsgSerializers[t].Deserialize(d)
+                name, reply = reply
                 print(f'{self.name} recv: {reply} from {name}')
     def staticThroughputTest(self, **kwargs):
         '''
         Run throughput test at application level
         paired with UavApp.staticThroughputTest()
         '''
+        t0 = Ctrl.GetSimTime()
         total = 0
-        delay = 1.0
         while Ctrl.ShouldContinue():
             msg = self.Rx()
             if msg is not None:
                 addr, msg = msg
-                t, d = msg
-                msg = MsgRaw(d)
                 total += len(msg.data)
-        print(f'GCS recv {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-delay)}')
+        t1 = Ctrl.GetSimTime()
+        print(f'GCS recv {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-(t1-t0))}')
     def streamingTest(self, **kwargs):
         '''
         Test Msg Level streaming back to GCS
@@ -145,9 +148,7 @@ class GcsApp(AppBase, threading.Thread):
         while Ctrl.ShouldContinue():
             reply = self.Rx()
             if reply is not None:
-                name, msg = reply
-                t, d = msg
-                reply = MsgSerializers[t].Deserialize(d)
+                name, reply = reply
                 # print(f'GCS recv {reply}')
                 
                 if fig is None:
@@ -160,10 +161,16 @@ class GcsApp(AppBase, threading.Thread):
             plt.draw()
         plt.clf()
     def run(self, **kwargs):
+        Ctrl.Wait(1.0)
+        self.sendThread.start()
         self.recvThread.start()
-        self.selfTest(**self.kwargs)
-        # self.staticThroughputTest(**self.kwargs)
+        
+        # self.selfTest(**self.kwargs)
+        self.staticThroughputTest(**self.kwargs)
         # self.streamingTest(**self.kwargs)
+        self.sendThread.setStopFlag()
         self.recvThread.setStopFlag()
+        
+        self.sendThread.join()
         self.recvThread.join()
         print(f'{self.name} joined')

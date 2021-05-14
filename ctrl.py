@@ -78,11 +78,12 @@ class Ctrl(threading.Thread):
     ctrlThread.join()
     '''
     endTime = math.inf
-    mutexSimTime = threading.Lock()
+    mutex = threading.Lock()
     simTime = 0
     lastTimestamp = time.time()
     isRunning = True
     suspended = []
+    netConfig = {}
     sn = 0 # serial number
 
     def __init__(self, zmqSendPort, zmqRecvPort, context):
@@ -106,14 +107,11 @@ class Ctrl(threading.Thread):
         Let the calling thread wait the specified amount of time
         Reutrn immediately if this thread is not running
         '''
-        Ctrl.mutexSimTime.acquire()
-        if Ctrl.isRunning is False:
-            Ctrl.mutexSimTime.release()
-        else:
+        if Ctrl.isRunning is True:
             cond = threading.Condition()
-            heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
-            Ctrl.sn += 1
-            Ctrl.mutexSimTime.release()
+            with Ctrl.mutex:
+                heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
+                Ctrl.sn += 1
             cond.acquire()
             cond.wait()
             cond.release()
@@ -124,57 +122,53 @@ class Ctrl(threading.Thread):
         notfiy the waiting thread if delay is expired
         notify every waiting if simulation is not running
         '''
-        Ctrl.mutexSimTime.acquire()
-        if Ctrl.isRunning: # maintain delay
-            while len(Ctrl.suspended) > 0 and Ctrl.simTime >= Ctrl.suspended[0][0]:
-                t, sn, cond = Ctrl.suspended[0]
+        with Ctrl.mutex:
+            if Ctrl.isRunning: # maintain delay
+                while len(Ctrl.suspended) > 0 and Ctrl.simTime >= Ctrl.suspended[0][0]:
+                    t, sn, cond = Ctrl.suspended[0]
+                    cond.acquire()
+                    cond.notify()
+                    cond.release()
+                    heapq.heappop(Ctrl.suspended)
+            else:
+                while len(Ctrl.suspended) > 0:
+                    t, sn, cond = heapq.heappop(Ctrl.suspended)
                 cond.acquire()
                 cond.notify()
                 cond.release()
-                heapq.heappop(Ctrl.suspended)
-        else: # resume all
-            while len(Ctrl.suspended) > 0:
-                t, sn, cond = heapq.heappop(Ctrl.suspended)
-                cond.acquire()
-                cond.notify()
-                cond.release()
-        Ctrl.mutexSimTime.release()
     @staticmethod
     def ShouldContinue():
         '''
         All threads should call this to check whether simulation is still running
         '''
-        return Ctrl.isRunning and Ctrl.GetSimTime() < Ctrl.GetEndTime()
+        with Ctrl.mutex:
+            isRunning = Ctrl.isRunning
+        return isRunning and Ctrl.GetSimTime() < Ctrl.GetEndTime()
    
     @staticmethod
     def SetEndTime(endTime):
-        Ctrl.mutexSimTime.acquire()
-        Ctrl.endTime = endTime
-        Ctrl.mutexSimTime.release()
-
+        with Ctrl.mutex:
+            Ctrl.endTime = endTime
     @staticmethod
     def GetEndTime():
-        Ctrl.mutexSimTime.acquire()
-        temp = Ctrl.endTime
-        Ctrl.mutexSimTime.release()
+        with Ctrl.mutex:
+            temp = Ctrl.endTime
         return temp
     @staticmethod
     def GetSimTime():
         '''
         Retreive the clock maintained by this thread
         '''
-        Ctrl.mutexSimTime.acquire()
-        temp = Ctrl.simTime
-        Ctrl.mutexSimTime.release()
+        with Ctrl.mutex:
+            temp = Ctrl.simTime
         return temp
     @staticmethod
     def GetFineTime():
         '''
         get continuous version of time
         '''
-        Ctrl.mutexSimTime.acquire()
-        temp = Ctrl.simTime + (time.time() - Ctrl.lastTimestamp)
-        Ctrl.mutexSimTime.release()
+        with Ctrl.mutex:
+            temp = Ctrl.simTime + (time.time() - Ctrl.lastTimestamp)
         return temp
     
     def waitForSyncStart(self):
@@ -186,10 +180,14 @@ class Ctrl(threading.Thread):
         self.client.reset()
         self.client.simPause(False)
         # static member init
-        Ctrl.mutexSimTime.acquire()
-        Ctrl.simTime = 0
-        Ctrl.lastTimestamp = time.time()
-        Ctrl.mutexSimTime.release()
+        with Ctrl.mutex:
+            Ctrl.simTime = 0
+            Ctrl.lastTimestamp = time.time()
+    @staticmethod
+    def GetNetConfig():
+        with Ctrl.mutex:
+            ret = Ctrl.netConfig
+        return ret
     def sendNetConfig(self, json_path):
         '''
         send network configuration to and config ns
@@ -264,6 +262,7 @@ class Ctrl(threading.Thread):
         self.zmqSendSocket.send_string(s)
         self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, int(10*1000*netConfig["updateGranularity"]))
         self.netConfig = netConfig
+        Ctrl.netConfig = netConfig
         Ctrl.SetEndTime(netConfig["endTime"])
         return netConfig
     def advance(self):
@@ -271,21 +270,25 @@ class Ctrl(threading.Thread):
         advace the simulation by a small step
         '''
         # this will block until resumed
-        msg = self.zmqRecvSocket.recv()
-        Ctrl.NotifyWait()
-        self.client.simContinueForTime(self.netConfig['updateGranularity'])
-        Ctrl.mutexSimTime.acquire()
-        Ctrl.simTime += self.netConfig['updateGranularity']
-        Ctrl.lastTimestamp = time.time()
-        self.zmqSendSocket.send_string('')
-        # print(f'Time = {Ctrl.GetSimTime()}')
-        Ctrl.mutexSimTime.release()
+        try:
+            msg = self.zmqRecvSocket.recv()
+            Ctrl.NotifyWait()
+            self.client.simContinueForTime(self.netConfig['updateGranularity'])
+        except zmq.ZMQError:
+            print('ctrl msg not received')
+        with Ctrl.mutex:
+            Ctrl.simTime += self.netConfig['updateGranularity']
+            Ctrl.lastTimestamp = time.time()
+            self.zmqSendSocket.send_string('')
+        # print(f'Time = {Ctrl.simTime}')
     def run(self):
         '''
         control and advance the whole simulation
         '''
         while Ctrl.ShouldContinue():
             self.advance()
-        Ctrl.isRunning = False
+        with Ctrl.mutex:
+            Ctrl.isRunning = False
         self.zmqSendSocket.send_string(f'bye {Ctrl.GetEndTime()}')
+        self.NotifyWait()
         
