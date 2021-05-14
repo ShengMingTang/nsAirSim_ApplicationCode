@@ -13,7 +13,7 @@ class AppReceiver(threading.Thread):
     zmqLevel transmission syntax: (name)?[ ](bytes)
     zmqRecvPort, context
     '''
-    def __init__(self, isAddressPrefixed, zmqRecvPort, context, **kwargs):
+    def __init__(self, isAddressPrefixed, zmqRecvPort, context, msgProtocol, **kwargs):
         super().__init__()
         self.mutex = threading.Lock()
         self.isAddressPrefixed = isAddressPrefixed
@@ -21,22 +21,28 @@ class AppReceiver(threading.Thread):
         self.deSrlers = {}
         self.msgs = queue.Queue()
         self.stopFlag = False
+        self.msgProtocol = msgProtocol
         
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
         self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, 1000)
     def recvMsg(self):
         '''
-        return FIFO scheme complete MsgBase object in self.msgs
+        return FIFO scheme complete MsgBase object in self.msgs if addressNotPrefixed
+        return (addr, MsgBase) if address is prefixed      
         return None if no complete MsgBase object is received
         '''
-        if self.msgs.empty():
+        try:
+            if self.isAddressPrefixed:
+                addr, data = self.msgs.get_nowait()
+                tid, bt = data
+                return (addr, self.msgProtocol[tid].Deserialize(bt))
+            else:
+                data = self.msgs.get_nowait()
+                tid, bt = data
+                return self.msgProtocol[tid].Deserialize(bt)
+        except queue.Empty:
             return None
-        else:
-            self.mutex.acquire()
-            ret = self.msgs.get_nowait()
-            self.mutex.release()
-            return ret
     def setStopFlag(self):
         '''
         must be called if receiving process is about to end

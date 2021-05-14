@@ -38,11 +38,13 @@ class UavApp(AppBase, threading.Thread):
             res = self.Tx(msg)
         reply = None
         while Ctrl.ShouldContinue() and reply is None:
+            time.sleep(0.1)
             reply = self.Rx()
-        if reply is not None:
-            t, d = reply
-            reply = MsgSerializers[t].Deserialize(d)
-            print(f'{self.name} recv: {reply}')
+            if reply is not None:
+                print(f'{self.name} recv: {reply}')
+            else:
+                # print(f'{self.name} recv: {reply}')
+                pass
     def staticThroughputTest(self, dist, period=0.01, **kwargs):
         '''
         Run throughput test at application level
@@ -55,14 +57,13 @@ class UavApp(AppBase, threading.Thread):
         lastTx = Ctrl.GetSimTime()
         msg = MsgRaw(bytes(50*1024))
         self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
-        delay = 1.0
+        delay = 0.2
         Ctrl.Wait(delay)
         while Ctrl.ShouldContinue():
-            t = Ctrl.GetSimTime()
-            if t - lastTx > period:
-                res = self.Tx(msg)
-                if res >= 0:
-                    total += res
+            Ctrl.Wait(0.01)
+            res = self.Tx(msg)
+            if res is True:
+                total += len(msg.data)
         print(f'{dist} {self.name} trans {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-delay)}')
     def streamingTest(self, **kwargs):
         '''
@@ -83,8 +84,8 @@ class UavApp(AppBase, threading.Thread):
             # print(f'res = {res}')
     def run(self, **kwargs):
         self.recvThread.start()
-        self.selfTest(**self.kwargs)
-        # self.staticThroughputTest(**self.kwargs)
+        # self.selfTest(**self.kwargs)
+        self.staticThroughputTest(**self.kwargs)
         # self.streamingTest(**self.kwargs)
         self.recvThread.setStopFlag()
         self.recvThread.join()
@@ -117,9 +118,7 @@ class GcsApp(AppBase, threading.Thread):
             if reply is None:
                 time.sleep(0.1)
             else:
-                name, msg = reply
-                t, d = msg
-                reply = MsgSerializers[t].Deserialize(d)
+                name, reply = reply
                 print(f'{self.name} recv: {reply} from {name}')
     def staticThroughputTest(self, **kwargs):
         '''
@@ -127,13 +126,12 @@ class GcsApp(AppBase, threading.Thread):
         paired with UavApp.staticThroughputTest()
         '''
         total = 0
-        delay = 1.0
+        delay = 0.1
+        Ctrl.Wait(delay)
         while Ctrl.ShouldContinue():
             msg = self.Rx()
             if msg is not None:
                 addr, msg = msg
-                t, d = msg
-                msg = MsgRaw(d)
                 total += len(msg.data)
         print(f'GCS recv {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-delay)}')
     def streamingTest(self, **kwargs):
@@ -161,8 +159,8 @@ class GcsApp(AppBase, threading.Thread):
         plt.clf()
     def run(self, **kwargs):
         self.recvThread.start()
-        self.selfTest(**self.kwargs)
-        # self.staticThroughputTest(**self.kwargs)
+        # self.selfTest(**self.kwargs)
+        self.staticThroughputTest(**self.kwargs)
         # self.streamingTest(**self.kwargs)
         self.recvThread.setStopFlag()
         self.recvThread.join()
