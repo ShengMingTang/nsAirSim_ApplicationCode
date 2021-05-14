@@ -9,6 +9,11 @@ class UavApp(UavAppBase):
         
     # def customfn(self, ...):
         # as your new target function
+    def run(self, **kwargs):
+        self.beforeRun()
+        self.streamingTest()
+        self.afterRun()
+        print(f'{self.name} joined')
         
 class GcsApp(GcsAppBase):
     def __init__(self, **kwargs):
@@ -17,3 +22,8 @@ class GcsApp(GcsAppBase):
         
     # def customfn(self, ...):
         # as your new target function
+    def run(self, **kwargs):
+        self.beforeRun()
+        self.streamingTest()
+        self.afterRun()
+        print(f'{self.name} joined')

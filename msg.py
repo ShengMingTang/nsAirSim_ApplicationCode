@@ -40,12 +40,12 @@ class MsgImg(MsgBase):
         return f'ts:{self.timestamp}, img size:{np.size(self.png)}'
 
 # summary
-MsgSerializers = {}
+MsgProtocol = {}
 for name, obj in inspect.getmembers(sys.modules[__name__]):
     if inspect.isclass(obj) and issubclass(obj, MsgBase):
         if obj != MsgBase:
-            if obj().GetTypeId() in MsgSerializers:
+            if obj().GetTypeId() in MsgProtocol:
                 raise ValueError(f'{obj().GetTypeId()} is already registered')
             else:
-                MsgSerializers[obj().GetTypeId()] = obj
+                MsgProtocol[obj().GetTypeId()] = obj
  

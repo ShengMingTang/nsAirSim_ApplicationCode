@@ -12,12 +12,12 @@ msgProtocol = {0:MsgRaw, 2:MsgImg}
 context = zmq.Context(5)
 json_path = Path.home()/'Documents'/'AirSim'/'settings.json'
 
-ctrlThread = Ctrl(AIRSIM2NS_CTRL_PORT, NS2AIRSIM_CTRL_PORT, context)
+ctrlThread = Ctrl(context)
 netConfig = ctrlThread.sendNetConfig(json_path)
 
 
-gcsThread = GcsApp(runner=GcsApp.streamingTest, msgProtocol=msgProtocol, isAddressPrefixed=True, zmqSendPort=AIRSIM2NS_GCS_PORT, zmqRecvPort=NS2AIRSIM_GCS_PORT, context=context)
-uavsThread = [ UavApp(runner=UavApp.streamingTest, msgProtocol=msgProtocol, name=name, isAddressPrefixed=False, zmqSendPort=AIRSIM2NS_PORT_START+i, zmqRecvPort=NS2AIRSIM_PORT_START+i, context=context) for i, name in enumerate(netConfig['uavsName']) ]
+gcsThread = GcsApp(context=context)
+uavsThread = [ UavApp(name=name, iden=i, context=context) for i, name in enumerate(netConfig['uavsName']) ]
 
 ctrlThread.waitForSyncStart()
 

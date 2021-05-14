@@ -86,12 +86,16 @@ class Ctrl(threading.Thread):
     netConfig = {}
     sn = 0 # serial number
 
-    def __init__(self, zmqSendPort, zmqRecvPort, context, verbose=False):
+    def __init__(self, context, verbose=False, **kwargs):
         '''
         Control the pace of simulation
         Note that there should be only 1 instance of this class
         since some of the feature is static
         '''
+        zmqSendPort = AIRSIM2NS_CTRL_PORT
+        zmqRecvPort = NS2AIRSIM_CTRL_PORT
+        
+        NS2AIRSIM_CTRL_PORT
         threading.Thread.__init__(self)
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')

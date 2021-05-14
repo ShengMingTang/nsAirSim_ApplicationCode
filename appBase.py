@@ -13,7 +13,7 @@ import airsim
 import numpy as np
 import matplotlib.pyplot as plt
 from appProtocolBase import AppSerializer, MsgBase
-from ctrl import Ctrl
+from ctrl import *
 from msg import *
 
 
@@ -171,7 +171,7 @@ class AppBase(metaclass=abc.ABCMeta):
         self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
         self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, 1000)
         self.srler = AppSerializer()
-        self.recvThread = AppReceiver(context=context, **kwargs)
+        self.recvThread = AppReceiver(context=context, msgProtocol=MsgProtocol, **kwargs)
     def Tx(self, obj, toName=None, flags=zmq.NOBLOCK):
         '''
         raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False)
@@ -200,18 +200,22 @@ class AppBase(metaclass=abc.ABCMeta):
         return (fromName, MsgBase) otherwise
         '''      
         return self.recvThread.recvMsg()
+    def beforeRun(self):
+        self.recvThread.start()
+    def afterRun(self):
+        self.recvThread.setStopFlag()
+        self.recvThread.join()
     @abc.abstractmethod
     def run(self, **kwargs):
         '''
         # Template
-        self.recvThread.start()
+        self.beforeRun()
         
         # custom code
         self.customFn()
         # custom code
         
-        self.recvThread.setStopFlag()
-        self.recvThread.join()
+        self.afterRun()
         
         self.customFn():
             # Add small amount of delay(1.0s) before transmitting anything in your target function
@@ -223,23 +227,17 @@ class AppBase(metaclass=abc.ABCMeta):
 
 class UavAppBase(AppBase, threading.Thread):
     '''
-    args is specified without self
-    UavAppBase(runner=UavApp.streamingTest, msgProtocol=msgProtocol, name=name, isAddressPrefixed=False, zmqSendPort=AIRSIM2NS_PORT_START+i, zmqRecvPort=NS2AIRSIM_PORT_START+i, context=context, **kwargs) for i, name in enumerate(netConfig['uavsName'])
+    UavAppBase(name=name, iden=i, context=context)
     '''
-    def __init__(self, name, runner=None, args=None, **kwargs):
+    def __init__(self, name, iden, **kwargs):
+        kwargs['isAddressPrefixed'] = False
+        kwargs['zmqSendPort'] = AIRSIM2NS_PORT_START+iden
+        kwargs['zmqRecvPort'] = NS2AIRSIM_PORT_START+iden
         super().__init__(**kwargs)
         self.name = name
-        self.kwargs = kwargs
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
-        
-        if runner is not None:
-            self.runner = runner
-        else:
-            self.runner = UavApp.selfTest
-        self.args = [self]
-        if args is not None:
-            self.args.extend(args)        
+               
     def selfTest(self, **kwargs):
         '''
         Basic utility test including Tx, Rx, MsgRaw
@@ -302,28 +300,20 @@ class UavAppBase(AppBase, threading.Thread):
             if res < 0:
                 print(f'{self.name} streaming res = {res}')
     def run(self, **kwargs):
-        self.recvThread.start()
-        self.runner(*self.args)
-        self.recvThread.setStopFlag()
-        self.recvThread.join()
+        self.beforeRun()
+        self.selfTest()
+        self.afterRun()
         print(f'{self.name} joined')
 class GcsAppBase(AppBase, threading.Thread):
     '''
-    args is specified without self
-    GcsAppBase(isAddressPrefixed=True, zmqSendPort=AIRSIM2NS_GCS_PORT, zmqRecvPort=NS2AIRSIM_GCS_PORT, context=context)
+    GcsAppBase(context=context)
     '''
     def __init__(self, runner=None, args=None, **kwargs):
+        kwargs['isAddressPrefixed'] = True
+        kwargs['zmqSendPort'] = AIRSIM2NS_GCS_PORT
+        kwargs['zmqRecvPort'] = NS2AIRSIM_GCS_PORT
         super().__init__(**kwargs)
         self.name = 'GCS'
-        self.kwargs = kwargs
-        
-        if runner is not None:
-            self.runner = runner
-        else:
-            self.runner = GcsApp.selfTest
-        self.args = [self]
-        if args is not None:
-            self.args.extend(args)
     def selfTest(self, **kwargs):
         '''
         Basic utility test including Tx, Rx, MsgRaw
@@ -385,8 +375,7 @@ class GcsAppBase(AppBase, threading.Thread):
             plt.draw()
         plt.clf()
     def run(self, **kwargs):
-        self.recvThread.start()
-        self.runner(*self.args)
-        self.recvThread.setStopFlag()
-        self.recvThread.join()
+        self.beforeRun()
+        self.selfTest()
+        self.afterRun()
         print(f'{self.name} joined')
