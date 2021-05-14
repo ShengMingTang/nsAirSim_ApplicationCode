@@ -30,11 +30,13 @@ class UavApp(AppBase, threading.Thread):
         Basic utility test including Tx, Rx, MsgRaw
         paired with GcsApp.selfTest()
         '''
+        delay = 0.1
+        Ctrl.Wait(delay)
         print(f'{self.name} is testing')
         msg = MsgRaw(b'I\'m %b' % (bytes(self.name, encoding='utf-8')))
-        # while self.Tx(msg) is False:
-        #     print(f'{self.name} trans fail')
-        # print(f'{self.name} trans msg')
+        while self.Tx(msg) is False:
+            print(f'{self.name} trans fail')
+        print(f'{self.name} trans msg')
         reply = None
         while Ctrl.ShouldContinue():
             time.sleep(0.1)
@@ -50,15 +52,15 @@ class UavApp(AppBase, threading.Thread):
         dist argument must be specified
         paired with GcsApp.staticThroughputTest()
         '''
-        t0 = Ctrl.GetSimTime()
+        delay = 0.2
+        Ctrl.Wait(delay)
         total = 0
         pose = self.client.simGetVehiclePose(vehicle_name=self.name)
         pose.position.x_val = dist
         lastTx = Ctrl.GetSimTime()
         msg = MsgRaw(bytes(50*1024))
         self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
-        delay = 0.2
-        Ctrl.Wait(delay)
+        t0 = Ctrl.GetSimTime()
         while Ctrl.ShouldContinue():
             Ctrl.Wait(0.01)
             res = self.Tx(msg)
@@ -72,6 +74,8 @@ class UavApp(AppBase, threading.Thread):
         self.client.enableApiControl(True, vehicle_name=self.name)
         self.client.armDisarm(True, vehicle_name=self.name)
         
+        delay = 0.2
+        Ctrl.Wait(delay)
         # self.client.takeoffAsync(vehicle_name=self.name).join()
         # self.client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
         while Ctrl.ShouldContinue():
@@ -82,16 +86,12 @@ class UavApp(AppBase, threading.Thread):
             res = self.Tx(msg)
             # print(f'res = {res}')
     def run(self, **kwargs):
-        Ctrl.Wait(1.0)
-        self.sendThread.start()
         self.recvThread.start()
         # self.selfTest(**self.kwargs)
         self.staticThroughputTest(**self.kwargs)
         # self.streamingTest(**self.kwargs)
         
-        self.sendThread.setStopFlag()
         self.recvThread.setStopFlag()
-        self.sendThread.join()
         self.recvThread.join()
         print(f'{self.name} joined')
         
@@ -108,6 +108,8 @@ class GcsApp(AppBase, threading.Thread):
         Basic utility test including Tx, Rx, MsgRaw
         paired with UavApp.selfTest()
         '''
+        delay = 1.0
+        Ctrl.Wait(delay)
         print(f'{self.name} is testing')
         msg = MsgRaw(b'I\'m GCS')
         while self.Tx(msg, 'A') is False:
@@ -128,10 +130,10 @@ class GcsApp(AppBase, threading.Thread):
         Run throughput test at application level
         paired with UavApp.staticThroughputTest()
         '''
-        t0 = Ctrl.GetSimTime()
         total = 0
         delay = 0.1
         Ctrl.Wait(delay)
+        t0 = Ctrl.GetSimTime()
         while Ctrl.ShouldContinue():
             msg = self.Rx()
             if msg is not None:
@@ -144,6 +146,8 @@ class GcsApp(AppBase, threading.Thread):
         Test Msg Level streaming back to GCS
         '''
         # @@ matplotlib lib is not thread safe, RuntimeError will be raised at the end of simulation
+        delay = 0.1
+        Ctrl.Wait(delay)
         fig = None
         while Ctrl.ShouldContinue():
             reply = self.Rx()
@@ -161,15 +165,11 @@ class GcsApp(AppBase, threading.Thread):
             plt.draw()
         plt.clf()
     def run(self, **kwargs):
-        Ctrl.Wait(1.0)
-        self.sendThread.start()
         self.recvThread.start()
         # self.selfTest(**self.kwargs)
         self.staticThroughputTest(**self.kwargs)
         # self.streamingTest(**self.kwargs)
-        self.sendThread.setStopFlag()
         self.recvThread.setStopFlag()
         
-        self.sendThread.join()
         self.recvThread.join()
         print(f'{self.name} joined')

@@ -5,7 +5,7 @@ import re
 import threading
 import queue
 import time
-from appProtocolBase import AppSerializer
+from appProtocolBase import AppSerializer, MsgBase, 
 from ctrl import Ctrl
 
 IOTIMEO = 1000 # I/O timeout for AppReceiver and AppSender
@@ -96,38 +96,6 @@ class AppSender(threading.Thread):
         self.zmqSendSocket = context.socket(zmq.REQ)
         self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
         self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, IOTIMEO)
-    def Tx(self):
-        with self.mutex:
-            stopFlag = self.stopFlag
-        if stopFlag is False:
-            if self.lastPacket is None: # last one is finished
-                if self.packets.empty() is False: # we have next one to transmit
-                    self.lastPacket = self.packets.get_nowait()
-                else: # decompose next msg if any
-                    try:
-                        c, msg, toName = self.msgs.get(True, IOTIMEO/1000)
-                        bt = self.srler.serialize(msg)
-                        # decompose to packets
-                        for i in range(0, len(bt), self.packetSize):
-                            self.packets.put_nowait((toName, bt[i*self.packetSize:(i+1)*self.packetSize]))
-                    except queue.Empty:
-                        pass
-            # proceed to next one
-            if self.lastPacket is None:
-                toName, payload = self.lastPacket
-                if toName is not None:
-                    payload = b'%b %b' % (bytes(toName, encoding='utf-8'), payload)
-                    # print(toName, payload)
-                try:
-                    self.zmqSendSocket.send(payload, flags=zmq.NOBLOCK)    
-                    res = self.zmqSendSocket.recv()
-                    res = int.from_bytes(res, sys.byteorder, signed=True)
-                    if res >= 0: # success, jump to next packet
-                        self.lastPacket = None
-                    return res
-                except zmq.ZMQError:
-                    return -1
-        return -1
     def sendMsg(self, msg, toName):
         if self.isAddressPrefixed is False and toName is not None:
             raise ValueError('isAddressPrefixed False but toName is specified')
@@ -188,16 +156,34 @@ class AppBase(metaclass=abc.ABCMeta):
     Any custom level application must inherit this
     implement Tx/Rx functions
     '''
-    def __init__(self, **kwargs):
+    def __init__(self, zmqSendPort, context, **kwargs):
         super().__init__()
-        self.sendThread = AppSender(**kwargs)
-        self.recvThread = AppReceiver(**kwargs)
-    def Tx(self, msg, toName=None, flags=zmq.NOBLOCK):
+        self.zmqSendSocket = context.socket(zmq.REQ)
+        self.zmqSendSocket.bind(f'tcp://*:{zmqSendPort}')
+        self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, 1000)
+        self.srler = AppSerializer()
+        self.recvThread = AppReceiver(context=context, **kwargs)
+    def Tx(self, obj, toName=None, flags=zmq.NOBLOCK):
         '''
-        return True if msg is pushed successfully
-        return Fasle otherwise
+        use MsgRaw as default type of Msg passing
+        raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False)
+        return int as the same in ns socket->Send()
         '''
-        return self.sendThread.sendMsg(msg, toName)
+        if isinstance(obj, MsgBase) is False:
+            obj = MsgRaw(obj)
+        # serialize
+        payload = self.srler.serialize(obj)
+        if toName is not None:
+            if self.recvThread.isAddressPrefixed is False:
+                raise TypeError('isAddressPrefixed set to False but desition is specified')
+            payload = b'%b %b' % (bytes(toName, encoding='utf-8'), payload)
+        try:
+            self.zmqSendSocket.send(payload, flags=flags)
+            res = self.zmqSendSocket.recv()
+            res = int.from_bytes(res, sys.byteorder, signed=True)
+            return res
+        except zmq.ZMQError:
+            return -1
     def Rx(self):
         '''
         return None if a complete MsgBase is not received
@@ -213,17 +199,14 @@ class AppBase(metaclass=abc.ABCMeta):
         # Add small amount of delay(1.0s) before transmitting anything
         # This is for ns to have time to set up everything
         Ctrl.Wait(1.0)
-        
-        self.sendThread.start()
+
         self.recvThread.start()
         
         # custom code
         self.customFn()
         # custom code
         
-        self.sendThread.setStopFlag()
         self.recvThread.setStopFlag()
-        self.sendThread.join()
         self.recvThread.join()
         
         self.customFn():
