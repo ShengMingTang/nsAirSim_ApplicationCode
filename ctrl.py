@@ -86,7 +86,7 @@ class Ctrl(threading.Thread):
     netConfig = {}
     sn = 0 # serial number
 
-    def __init__(self, zmqSendPort, zmqRecvPort, context):
+    def __init__(self, zmqSendPort, zmqRecvPort, context, verbose=False):
         '''
         Control the pace of simulation
         Note that there should be only 1 instance of this class
@@ -101,6 +101,9 @@ class Ctrl(threading.Thread):
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
         self.client.simRunConsoleCommand('stat fps')
+        
+        self.verbose = verbose
+    
     @staticmethod
     def Wait(delay):
         '''
@@ -132,7 +135,7 @@ class Ctrl(threading.Thread):
                     cond.notify()
                     cond.release()
                     heapq.heappop(Ctrl.suspended)
-            else:
+            else: # release all pending threads
                 while len(Ctrl.suspended) > 0:
                     t, sn, cond = heapq.heappop(Ctrl.suspended)
                     cond.acquire()
@@ -271,16 +274,17 @@ class Ctrl(threading.Thread):
         '''
         advace the simulation by a small step
         '''
-        # this will block until resumed
         try:
             msg = self.zmqRecvSocket.recv()
-            Ctrl.NotifyWait()
+            # this will block until resumed
             self.client.simContinueForTime(self.netConfig['updateGranularity'])
+            Ctrl.NotifyWait()
             with Ctrl.mutex:
                 Ctrl.simTime += self.netConfig['updateGranularity']
                 Ctrl.lastTimestamp = time.time()
                 self.zmqSendSocket.send_string('')
-                print(f'Time = {Ctrl.simTime}')
+                if self.verbose:
+                    print(f'Time = {Ctrl.simTime}')
         except zmq.ZMQError:
             print('ctrl msg not received')
     def run(self):

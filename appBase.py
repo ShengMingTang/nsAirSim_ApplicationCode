@@ -1,12 +1,21 @@
 import abc
+from typing import Type
 import zmq
 import sys
 import re
 import threading
 import queue
 import time
-from appProtocolBase import AppSerializer, MsgBase, 
+import cv2
+
+import setup_path
+import airsim
+import numpy as np
+import matplotlib.pyplot as plt
+from appProtocolBase import AppSerializer, MsgBase
 from ctrl import Ctrl
+from msg import *
+
 
 IOTIMEO = 1000 # I/O timeout for AppReceiver and AppSender
 
@@ -79,7 +88,6 @@ class AppReceiver(threading.Thread):
                         self.msgs.put_nowait(data)
             except:
                 pass
-
 class AppSender(threading.Thread):
     def __init__(self, isAddressPrefixed, zmqSendPort, context, **kwargs):
         super().__init__()
@@ -151,6 +159,7 @@ class AppSender(threading.Thread):
                         self.lastPacket = None
                 except zmq.ZMQError:
                     pass
+
 class AppBase(metaclass=abc.ABCMeta):
     '''
     Any custom level application must inherit this
@@ -165,12 +174,11 @@ class AppBase(metaclass=abc.ABCMeta):
         self.recvThread = AppReceiver(context=context, **kwargs)
     def Tx(self, obj, toName=None, flags=zmq.NOBLOCK):
         '''
-        use MsgRaw as default type of Msg passing
         raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False)
         return int as the same in ns socket->Send()
         '''
         if isinstance(obj, MsgBase) is False:
-            obj = MsgRaw(obj)
+            raise TypeError('obj should be an instance of MsgBase')
         # serialize
         payload = self.srler.serialize(obj)
         if toName is not None:
@@ -196,10 +204,6 @@ class AppBase(metaclass=abc.ABCMeta):
     def run(self, **kwargs):
         '''
         # Template
-        # Add small amount of delay(1.0s) before transmitting anything
-        # This is for ns to have time to set up everything
-        Ctrl.Wait(1.0)
-
         self.recvThread.start()
         
         # custom code
@@ -210,7 +214,179 @@ class AppBase(metaclass=abc.ABCMeta):
         self.recvThread.join()
         
         self.customFn():
+            # Add small amount of delay(1.0s) before transmitting anything in your target function
+            # This is for ns to have time to set up everything
             self.client.enableApiControl(True, vehicle_name=self.name)
             self.client.armDisarm(True, vehicle_name=self.name)
         '''
         return NotImplemented
+
+class UavAppBase(AppBase, threading.Thread):
+    '''
+    args is specified without self
+    UavAppBase(runner=UavApp.streamingTest, msgProtocol=msgProtocol, name=name, isAddressPrefixed=False, zmqSendPort=AIRSIM2NS_PORT_START+i, zmqRecvPort=NS2AIRSIM_PORT_START+i, context=context, **kwargs) for i, name in enumerate(netConfig['uavsName'])
+    '''
+    def __init__(self, name, runner=None, args=None, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.kwargs = kwargs
+        self.client = airsim.MultirotorClient()
+        self.client.confirmConnection()
+        
+        if runner is not None:
+            self.runner = runner
+        else:
+            self.runner = UavApp.selfTest
+        self.args = [self]
+        if args is not None:
+            self.args.extend(args)        
+    def selfTest(self, **kwargs):
+        '''
+        Basic utility test including Tx, Rx, MsgRaw
+        paired with GcsApp.selfTest()
+        '''
+        delay = 1.0
+        Ctrl.Wait(delay)
+        print(f'{self.name} is testing')
+        msg = MsgRaw(b'I\'m %b' % (bytes(self.name, encoding='utf-8')))
+        while self.Tx(msg) is False:
+            print(f'{self.name} trans fail')
+        print(f'{self.name} trans msg')
+        reply = None
+        while Ctrl.ShouldContinue():
+            time.sleep(0.1)
+            reply = self.Rx()
+            if reply is not None:
+                print(f'{self.name} recv: {reply}')
+            else:
+                # print(f'{self.name} recv: {reply}')
+                pass
+    def staticThroughputTest(self, dist=0, period=0.01, **kwargs):
+        '''
+        Run throughput test at application level
+        dist argument must be specified
+        paired with GcsApp.staticThroughputTest()
+        '''
+        delay = 0.2
+        Ctrl.Wait(delay)
+        total = 0
+        pose = self.client.simGetVehiclePose(vehicle_name=self.name)
+        pose.position.x_val = dist
+        lastTx = Ctrl.GetSimTime()
+        msg = MsgRaw(bytes(50*1024))
+        self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
+        t0 = Ctrl.GetSimTime()
+        while Ctrl.ShouldContinue():
+            Ctrl.Wait(period)
+            res = self.Tx(msg)
+            if res > 0:
+                total += len(msg.data)
+        print(f'{dist} {self.name} trans {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-delay)}')
+    def streamingTest(self, **kwargs):
+        '''
+        Test Msg Level streaming back to GCS
+        '''
+        self.client.enableApiControl(True, vehicle_name=self.name)
+        self.client.armDisarm(True, vehicle_name=self.name)
+        
+        delay = 0.2
+        Ctrl.Wait(delay)
+        # self.client.takeoffAsync(vehicle_name=self.name).join()
+        # self.client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
+        while Ctrl.ShouldContinue():
+            Ctrl.Wait(0.1)
+            rawImage = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
+            png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
+            msg = MsgImg(png, Ctrl.GetSimTime())
+            res = self.Tx(msg)
+            if res < 0:
+                print(f'{self.name} streaming res = {res}')
+    def run(self, **kwargs):
+        self.recvThread.start()
+        self.runner(*self.args)
+        self.recvThread.setStopFlag()
+        self.recvThread.join()
+        print(f'{self.name} joined')
+class GcsAppBase(AppBase, threading.Thread):
+    '''
+    args is specified without self
+    GcsAppBase(isAddressPrefixed=True, zmqSendPort=AIRSIM2NS_GCS_PORT, zmqRecvPort=NS2AIRSIM_GCS_PORT, context=context)
+    '''
+    def __init__(self, runner=None, args=None, **kwargs):
+        super().__init__(**kwargs)
+        self.name = 'GCS'
+        self.kwargs = kwargs
+        
+        if runner is not None:
+            self.runner = runner
+        else:
+            self.runner = GcsApp.selfTest
+        self.args = [self]
+        if args is not None:
+            self.args.extend(args)
+    def selfTest(self, **kwargs):
+        '''
+        Basic utility test including Tx, Rx, MsgRaw
+        paired with UavApp.selfTest()
+        '''
+        delay = 1.0
+        Ctrl.Wait(delay)
+        print(f'{self.name} is testing')
+        msg = MsgRaw(b'I\'m GCS')
+        while self.Tx(msg, 'A') is False:
+            time.sleep(0.1)
+        print(f'GCS trans to A')
+        while self.Tx(msg, 'B') is False:
+            time.sleep(0.1)
+        print(f'GCS trans to B')
+        while Ctrl.ShouldContinue():
+            reply = self.Rx()
+            if reply is None:
+                time.sleep(0.1)
+            else:
+                name, reply = reply
+                print(f'{self.name} recv: {reply} from {name}')
+    def staticThroughputTest(self, **kwargs):
+        '''
+        Run throughput test at application level
+        paired with UavApp.staticThroughputTest()
+        '''
+        total = 0
+        delay = 0.1
+        Ctrl.Wait(delay)
+        t0 = Ctrl.GetSimTime()
+        while Ctrl.ShouldContinue():
+            msg = self.Rx()
+            if msg is not None:
+                addr, msg = msg
+                total += len(msg.data)
+        print(f'GCS recv {total}, throughput = {total*8/1000/1000/(Ctrl.GetEndTime()-(t0))}')
+    def streamingTest(self, **kwargs):
+        '''
+        Test Msg Level streaming back to GCS
+        '''
+        # @@ matplotlib lib is not thread safe, RuntimeError will be raised at the end of simulation
+        delay = 0.1
+        Ctrl.Wait(delay)
+        fig = None
+        while Ctrl.ShouldContinue():
+            reply = self.Rx()
+            if reply is not None:
+                name, reply = reply
+                # print(f'GCS recv {reply}')
+                
+                if fig is None:
+                    fig = plt.imshow(reply.png)
+                else:
+                    fig.set_data(reply.png)
+            else:
+                pass
+            plt.pause(0.1)
+            plt.draw()
+        plt.clf()
+    def run(self, **kwargs):
+        self.recvThread.start()
+        self.runner(*self.args)
+        self.recvThread.setStopFlag()
+        self.recvThread.join()
+        print(f'{self.name} joined')

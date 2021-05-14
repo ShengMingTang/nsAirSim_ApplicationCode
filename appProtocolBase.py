@@ -31,25 +31,6 @@ class MsgBase(metaclass=abc.ABCMeta):
     def __str__(self):
         return NotImplemented
 
-class MsgRaw(MsgBase):
-    '''
-    The simplest MsgBase subclass
-    directly transform data to bytes if possible
-    '''
-    def __init__(self, data=bytes(0), **kwargs):
-        self.data = data
-        
-    @classmethod
-    def GetTypeId(self):
-        return 0
-    def serialize(self):
-        return bytes(self.data)
-    @classmethod
-    def Deserialize(cls, data):
-        return MsgRaw(data)
-    def __str__(self):
-        return str(self.data)
-    
 class AppSerializerState(Enum):
     '''
     State an AppSerializer may encounter
