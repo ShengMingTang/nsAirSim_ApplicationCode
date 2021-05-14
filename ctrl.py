@@ -107,6 +107,7 @@ class Ctrl(threading.Thread):
         Let the calling thread wait the specified amount of time
         Reutrn immediately if this thread is not running
         '''
+<<<<<<< HEAD
         with Ctrl.mutex:
             isRunning = Ctrl.isRunning
             if isRunning is True:
@@ -114,6 +115,13 @@ class Ctrl(threading.Thread):
                 heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
                 Ctrl.sn += 1
         if isRunning is True:
+=======
+        if Ctrl.isRunning is True:
+            cond = threading.Condition()
+            with Ctrl.mutex:
+                heapq.heappush(Ctrl.suspended, (Ctrl.simTime + delay, Ctrl.sn, cond))
+                Ctrl.sn += 1
+>>>>>>> IOthread
             cond.acquire()
             cond.wait()
             cond.release()
