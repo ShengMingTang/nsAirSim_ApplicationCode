@@ -247,7 +247,7 @@ class UavAppBase(AppBase, threading.Thread):
         Ctrl.Wait(delay)
         print(f'{self.name} is testing')
         msg = MsgRaw(b'I\'m %b' % (bytes(self.name, encoding='utf-8')))
-        while self.Tx(msg) is False:
+        while self.Tx(msg) < 0:
             print(f'{self.name} trans fail')
         print(f'{self.name} trans msg')
         reply = None
