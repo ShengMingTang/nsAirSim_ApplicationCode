@@ -7,23 +7,27 @@ class UavApp(UavAppBase):
         super().__init__(**kwargs)
         # any self.attribute that you need
         
-    # def customfn(self, ...):
+    def customfn(self, *args, **kwargs):
         # as your new target function
-    def run(self, **kwargs):
-        self.beforeRun()
-        self.streamingTest()
-        self.afterRun()
-        print(f'{self.name} joined')
+        pass
+
+    # def run(self, **kwargs):
+    #     self.beforeRun()
+    #     self.streamingTest()
+    #     self.afterRun()
+    #     print(f'{self.name} joined')
         
 class GcsApp(GcsAppBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # any self.attribute that you need
         
-    # def customfn(self, ...):
+    def customfn(self, *args, **kwargs):
         # as your new target function
-    def run(self, **kwargs):
-        self.beforeRun()
-        self.streamingTest()
-        self.afterRun()
-        print(f'{self.name} joined')
+        pass
+
+    # def run(self, *args, **kwargs):
+    #     self.beforeRun()
+    #     self.streamingTest()
+    #     self.afterRun()
+    #     print(f'{self.name} joined')

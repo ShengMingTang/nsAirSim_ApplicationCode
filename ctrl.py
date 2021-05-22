@@ -233,7 +233,7 @@ class Ctrl(threading.Thread):
             "isSyncLogEnabled": 0,
 
             # var not sent
-            "endTime":5.0
+            "endTime":math.inf
         }
         # overwrite default settings
         with open(json_path) as f:

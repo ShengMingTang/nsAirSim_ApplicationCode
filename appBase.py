@@ -80,12 +80,12 @@ class AppReceiver(threading.Thread):
                     if fromName not in self.deSrlers:
                         self.deSrlers[fromName] = AppSerializer()
                     data = self.deSrlers[fromName].deserialize(msg)
-                    if data is not None:
-                        self.msgs.put_nowait((fromName, data))
+                    for datum in data:
+                        self.msgs.put_nowait((fromName, datum))
                 else:
                     data = self.desrler.deserialize(msg)
-                    if data is not None:
-                        self.msgs.put_nowait(data)
+                    for datum in data:
+                        self.msgs.put_nowait(datum)
             except:
                 pass
 class AppSender(threading.Thread):
@@ -172,26 +172,62 @@ class AppBase(metaclass=abc.ABCMeta):
         self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, 1000)
         self.srler = AppSerializer()
         self.recvThread = AppReceiver(context=context, msgProtocol=MsgProtocol, **kwargs)
+        self.transmitSize = Ctrl.GetNetConfig()['TcpSndBufSize'] // 5
     def Tx(self, obj, toName=None, flags=zmq.NOBLOCK):
         '''
-        raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False)
-        return int as the same in ns socket->Send()
+        raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False) in both cases
+        If obj is NOT iterable:
+            return int as the same in ns socket->Send()
+        If obj is iterable:
+            this fn will transmit as much as it can until total size reaches self.transmitSize
+            return [r_0, r_1 , r_2, ...]
+            r_i > 0 means that msg in this index is transmitted successfully
+            r_i < 0 means it is not transmitted or network congested (cannot fit into buffer)
         '''
-        if isinstance(obj, MsgBase) is False:
-            raise TypeError('obj should be an instance of MsgBase')
-        # serialize
-        payload = self.srler.serialize(obj)
-        if toName is not None:
-            if self.recvThread.isAddressPrefixed is False:
-                raise TypeError('isAddressPrefixed set to False but desition is specified')
-            payload = b'%b %b' % (bytes(toName, encoding='utf-8'), payload)
         try:
-            self.zmqSendSocket.send(payload, flags=flags)
-            res = self.zmqSendSocket.recv()
-            res = int.from_bytes(res, sys.byteorder, signed=True)
-            return res
-        except zmq.ZMQError:
-            return -1
+            sz = 0
+            msgs = iter(obj)
+            payload = bytes(0)
+            ret = [-1 for msg in iter(obj)]
+            for i, msg in enumerate(msgs):
+                if isinstance(msg, MsgBase) is False:
+                    raise TypeError('obj should be an instance of MsgBase')
+                # serialize
+                thisPayload = self.srler.serialize(msg)
+                if toName is not None:
+                    if self.recvThread.isAddressPrefixed is False:
+                        raise TypeError('isAddressPrefixed set to False but desition is specified')
+                    thisPayload = b'%b %b' % (bytes(toName, encoding='utf-8'), thisPayload)
+                sz += len(thisPayload)
+                if sz < self.transmitSize:
+                    payload += thisPayload
+                    ret[i] = len(thisPayload)
+                else:
+                    break
+            try:
+                self.zmqSendSocket.send(payload, flags=flags)
+                res = self.zmqSendSocket.recv()
+                res = int.from_bytes(res, sys.byteorder, signed=True)
+                return ret
+            except zmq.ZMQError: # all error
+                return [-1 for i in iter(obj)]
+        except:
+            if isinstance(obj, MsgBase) is False:
+                raise TypeError('obj should be an instance of MsgBase')
+            # serialize
+            payload = self.srler.serialize(obj)
+            if toName is not None:
+                if self.recvThread.isAddressPrefixed is False:
+                    raise TypeError('isAddressPrefixed set to False but desition is specified')
+                payload = b'%b %b' % (bytes(toName, encoding='utf-8'), payload)
+            try:
+                self.zmqSendSocket.send(payload, flags=flags)
+                res = self.zmqSendSocket.recv()
+                res = int.from_bytes(res, sys.byteorder, signed=True)
+                return res
+            except zmq.ZMQError:
+                return -1
+
     def Rx(self):
         '''
         return None if a complete MsgBase is not received
@@ -250,6 +286,15 @@ class UavAppBase(AppBase, threading.Thread):
         while self.Tx(msg) < 0:
             print(f'{self.name} trans fail')
         print(f'{self.name} trans msg')
+
+        # compound send test
+        msgs = [msg for i in range(5)]
+        res = [-1 for i in range(len(msgs))]
+        print(f'{self.name} is sending multiple msg to GCS')
+        while sum(res) < 0:
+            res = self.Tx(msgs)
+        print(f'{self.name} sents multiple msg with res={res}')
+
         reply = None
         while Ctrl.ShouldContinue():
             time.sleep(0.1)
@@ -329,6 +374,21 @@ class GcsAppBase(AppBase, threading.Thread):
         while self.Tx(msg, 'B') is False:
             time.sleep(0.1)
         print(f'GCS trans to B')
+
+        # compound send test
+        msgs = [msg for i in range(5)]
+        res = [-1 for i in range(len(msgs))]
+        print('GCS is sending multiple msg to A')
+        while sum(res) < 0:
+            res = self.Tx(msgs, toName='A')
+        print(f'{self.name} sents multiple msg to A with res={res}')
+
+        res = [-1 for i in range(len(msgs))]
+        print('GCS is sending multiple msg to B')
+        while sum(res) < 0:
+            res = self.Tx(msgs, toName='B')
+        print(f'{self.name} sents multiple msg to B with res={res}')
+
         while Ctrl.ShouldContinue():
             reply = self.Rx()
             if reply is None:
