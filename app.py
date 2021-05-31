@@ -1,15 +1,15 @@
+import setup_path
+import airsim
 from appBase import *
+from msg import *
+from ctrl import *
 '''
 Custom App code
 '''
 import threading
 import heapq
 from pathlib import Path
-import setup_path
-import airsim
 import cv2
-from msg import *
-from ctrl import *
 FPS = 10
 OUT_DIR = Path('./output')
 class UavApp(UavAppBase):
