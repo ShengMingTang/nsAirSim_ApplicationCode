@@ -53,8 +53,7 @@ class UavApp(UavAppBase):
         while res < 0:
             res = self.Tx(msg)
         print(f'{self.name} says bye')
-            
-    def customfn(self, *args, **kwargs):
+    def pathfollower(self):
         client = airsim.MultirotorClient()
         client.enableApiControl(True, vehicle_name=self.name)
         client.armDisarm(True, vehicle_name=self.name)
@@ -74,7 +73,9 @@ class UavApp(UavAppBase):
         with self.mutex:
             self.stop = True
         self.recThread.join()
-        
+    def customfn(self, *args, **kwargs):
+        # self.pathfollower()
+        self.staticThroughputTest(0, 0.01)
     def run(self, *args, **kwargs):
         self.beforeRun()
         self.customfn(*args, **kwargs)
@@ -85,8 +86,7 @@ class GcsApp(GcsAppBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # any self.attribute that you need
-        
-    def customfn(self, *args, **kwargs):
+    def recorder(self):
         count = 0
         lastImg = MsgImg(np.zeros((144, 256, 3), dtype=np.uint8))
         thisImg = MsgImg(np.zeros((144, 256, 3), dtype=np.uint8))
@@ -120,7 +120,10 @@ class GcsApp(GcsAppBase):
                 lastImg = thisImg
                 print(f'GCS count={count}')
             Ctrl.Wait(T)
-
+            
+    def customfn(self, *args, **kwargs):
+        # self.recorder()
+        self.staticThroughputTest()
     def run(self, *args, **kwargs):
         self.beforeRun()
         self.customfn(*args, **kwargs)
