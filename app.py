@@ -10,8 +10,11 @@ import threading
 import heapq
 from pathlib import Path
 import cv2
-FPS = 10
-OUT_DIR = Path('./output')
+import csv
+
+# ffmpeg -r 5 -i exp_small/img%d.png -vcodec libx264 -crf 15  -pix_fmt yuv420p exp_small/test.mp4
+FPS = 5
+WORK_DIR = Path('./exp_small')
 class UavApp(UavAppBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -22,21 +25,26 @@ class UavApp(UavAppBase):
         heap = []
         stop = False
         client = airsim.MultirotorClient()
+        rawImage = client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
+        png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
+        print(png.shape)
+        Ctrl.Wait(1.0)
         while stop is False:
-            if len(heap) >= maxSize:
-                heapq.heappop(heap)
+            heap = heap[-9:] # size 10 buffer
             rawImage = client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
             png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
             t = Ctrl.GetSimTime()
             msg = MsgImg(png, t)
-            heapq.heappush(heap, (t, msg))
-            ress = self.Tx([item[1] for item in heap]) # transmit as much as it can
-            print(f'{self.name} ress = {ress}')
+            heap.append(msg)
+            ress = self.Tx(heap) # transmit as much as it can
+            head = 0
+            print(ress)
             for res in ress:
                 if res >= 0:
-                    heapq.heappop(heap)
+                    head += 1
                 else:
                     break
+            heap = heap[head:]
             Ctrl.Wait(period)
             with self.mutex:
                 stop = self.stop
@@ -50,11 +58,19 @@ class UavApp(UavAppBase):
         client = airsim.MultirotorClient()
         client.enableApiControl(True, vehicle_name=self.name)
         client.armDisarm(True, vehicle_name=self.name)
-        client.takeoffAsync(vehicle_name=self.name).join()
         self.recThread.start()
-        endTime = Ctrl.GetSimTime() + 10 # 10 seconds video
-        while Ctrl.GetSimTime() < endTime:
-            client.moveByVelocityBodyFrameAsync(2, 0, 0, duration=1.0).join()
+        client.takeoffAsync(vehicle_name=self.name).join()
+        with open(WORK_DIR/'path.csv') as f:
+            rows = csv.reader(f)
+            headers = next(rows)
+            for i, row in enumerate(rows):
+                t = row[0]
+                x, y, z, vel = [float(item) for item in row[1:]]
+                if t == 'pos':
+                    client.moveToPositionAsync(x, y, z, vel).join()
+                    print(f'{self.name} goes to {x},{y}, {z}')
+                else:
+                    raise ValueError(f'Unrecongnized op {t}')
         with self.mutex:
             self.stop = True
         self.recThread.join()
@@ -72,7 +88,11 @@ class GcsApp(GcsAppBase):
         
     def customfn(self, *args, **kwargs):
         count = 0
-        lastImg = None
+        lastImg = MsgImg(np.zeros((144, 256, 3), dtype=np.uint8))
+        thisImg = MsgImg(np.zeros((144, 256, 3), dtype=np.uint8))
+        
+        lastTimestamp = 0
+        T = 1/FPS
         while True:
             reply = self.Rx()
             # print(reply)
@@ -83,12 +103,23 @@ class GcsApp(GcsAppBase):
                     Ctrl.SetEndTime(Ctrl.GetSimTime() + 1.0) # end of simulation
                     break
                 else:
-                    lastImg = reply.png
+                    thisImg = reply
+                    lastTimestamp = thisImg.timestamp - T/2
                 print(f'{self.name} recv msg')
-            if lastImg is not None:
-                cv2.imwrite(str(OUT_DIR/('img%05d.png'%(count))), lastImg)
+            
+            #  t_last t-T/2| ... (thisImg) | t+T/2
+            while thisImg.timestamp > lastTimestamp + T/2: # too late, patch
+                if lastImg.timestamp != 0:
+                    cv2.imwrite(str(WORK_DIR/('img%d.png'%(count))), lastImg.png)
+                    count += 1
+                    print(f'patched {count}')
+                lastTimestamp += T
+            if thisImg.timestamp != lastImg.timestamp:
+                cv2.imwrite(str(WORK_DIR/('img%d.png'%(count))), thisImg.png)
                 count += 1
-            Ctrl.Wait(1/FPS)
+                lastImg = thisImg
+                print(f'GCS count={count}')
+            Ctrl.Wait(T)
 
     def run(self, *args, **kwargs):
         self.beforeRun()
