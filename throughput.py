@@ -78,6 +78,8 @@ LTEApp = np.array([
 plt.plot(LTEIp[:, 0], LTEIp[:, 1], 'x-', label='LTE IP level')
 plt.plot(LTEApp[:, 0], LTEApp[:, 1], 'x-', label='LTE App level')
 plt.title('Throughput vs distance')
+plt.ylabel('Mbps')
+plt.xlabel('distance (in meters)')
 plt.legend()
 plt.savefig('./throughput.png')
 plt.show()
