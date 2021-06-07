@@ -1,0 +1,67 @@
+{
+	"SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/master/docs/settings.md",
+	"SettingsVersion": 1.2,
+	"SimMode": "Multirotor",
+	"ClockSpeed": 1,
+	"CameraDefaults": {
+		"CaptureSettings": [
+			{
+				"ImageType" : 0,
+				"Width" : 720,
+				"Height" : 576
+			}
+		]
+	},
+	"Vehicles": {
+		"A": {
+			"VehicleType": "SimpleFlight",
+			"X": 0,
+			"Y": 0,
+			"Z": 0,
+			"EnableTrace": true,
+			"Cameras" : {
+				"high_res": {
+					"CaptureSettings" : [
+						{
+							"ImageType" : 0,
+							"Width" : 720,
+							"Height" : 576
+						}
+					],
+					"X": 0.50, "Y": 0.00, "Z": 0.00,
+					"Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+				}
+			}
+		}
+	},
+	"updateGranularity": 0.01,
+	"segmentSize": 1448,
+	"numOfCong": 0,
+	"congRate": 1.0,
+	"congArea": [
+		0,
+		0,
+		10
+	],
+	"initEnbApPos": [
+		[
+			0,
+			0,
+			0
+		]
+	],
+	"nRbs": 100,
+	"TcpSndBufSize": 72163700,
+	"TcpRcvBufSize": 72163700,
+	"CqiTimerThreshold": 10,
+	"LteTxPower": 0,
+	"p2pDataRate": "1Gb/s",
+	"p2pMtu": 1500,
+	"p2pDelay": 10e-3,
+	"useWifi": 0,
+	"isMainLogEnabled": 1,
+	"isGcsLogEnabled": 0,
+	"isUavLogEnabled": 0,
+	"isCongLogEnabled": 0,
+	"isSyncLogEnabled": 0
+}
