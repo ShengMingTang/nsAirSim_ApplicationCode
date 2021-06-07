@@ -53,33 +53,45 @@ import numpy as np
 '''
 # Measure on receiver side
 # In MBps
+import matplotlib.pyplot as plt
+import numpy as np
 LTEIp = np.array([
     # [dist, throughput]
+    # [250, 1.06395],
+    # [1250, 0.533546],
+
     [0, 1.32964],
-    [250, 1.06395],
     [500, 0.812705],
-    [750, 0.640659],
-    [1000, 0.556357],
-    [1250, 0.533546],
-    [2000, 0.2954],
-    [3000, 0.2413],
+    [1000, 0.555145],
+    [1500, 0.446886],
+    [2000, 0.294864],
+    [2500, 0.293022],
+    [3000, 0.24136],
+    [3500, 0.203068],
+    [4000, 0.203591],
+    [4500, 0.0]
 ])
 LTEApp = np.array([
     # [dist, throughput]
+    # [250, 0.755],
+    # [1250, 0.25180],
+    
     [0, 1.09114],
-    [250, 0.755],
-    [500, 0.5036],
+    [500, 0.503606],
     [1000, 0.335737],
-    [1250, 0.25180],
+    [1500, 0.251803],
     [2000, 0.167868],
-    [3000, 0.08393]
+    [2500, 0.167868],
+    [3000, 0.08393],
+    [3500, 0.083934],
+    [4000, 0.083934],
+    [4500, 0.0]
 ])
 
-plt.plot(LTEIp[:, 0], LTEIp[:, 1], 'x-', label='LTE IP level')
-plt.plot(LTEApp[:, 0], LTEApp[:, 1], 'x-', label='LTE App level')
-plt.title('Throughput vs distance')
-plt.ylabel('Mbps')
-plt.xlabel('distance (in meters)')
+plt.plot(LTEIp[:, 0], LTEIp[:, 1], 'o-', label='IP', linewidth=3, markersize=10)
+plt.plot(LTEApp[:, 0], LTEApp[:, 1], 'X--', label='App', linewidth=3, markersize=10)
+plt.ylabel('Throughput Mbps')
+plt.xlabel('Distance (M)')
 plt.legend()
-plt.savefig('./throughput.png')
+plt.savefig('./throughput.eps')
 plt.show()

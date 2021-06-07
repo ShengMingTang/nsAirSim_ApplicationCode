@@ -14,8 +14,10 @@ import csv
 
 import detect
 
+# fmpeg -i in.mp4 -pix_fmt yuv420p -c:a copy -movflags +faststart out.mp4
+
 FPS = 5
-WORK_DIR = Path('./exp_all_LD')
+WORK_DIR = Path('./exp_2nd_quadrant_SD')
 class UavApp(UavAppBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -62,7 +64,7 @@ class UavApp(UavAppBase):
         client = airsim.MultirotorClient()
         client.enableApiControl(True, vehicle_name=self.name)
         client.armDisarm(True, vehicle_name=self.name)
-        self.recThread.start()
+        # self.recThread.start()
         client.takeoffAsync(vehicle_name=self.name).join()
         with open(WORK_DIR/'path.csv') as f:
             rows = csv.reader(f)
@@ -82,64 +84,97 @@ class UavApp(UavAppBase):
         client.landAsync().join()
         with self.mutex:
             self.stop = True
-        self.recThread.join()
+        # self.recThread.join()
         Ctrl.SetEndTime(Ctrl.GetSimTime() + 3.0) # end of simulation
     def windEffect(self):
         '''
             {
-                "SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/master/docs/settings.md",
-                "SettingsVersion": 1.2,
-                "SimMode": "Multirotor",
-                "ClockSpeed": 1,
-                "CameraDefaults": {
-                    "CaptureSettings": [
-                    {
-                        "ImageType": 0
-                    }
-                    ]
-                },
-                
-                "Vehicles": {
-                    "A": {
-                    "VehicleType": "SimpleFlight",
-                    "X": 0, "Y": 0, "Z": 0,
-                    "EnableTrace": true
-                    },
-                    "B": {
-                        "VehicleType": "SimpleFlight",
-                        "X": 0, "Y": -3, "Z": 0,
-                        "EnableTrace": true
-                    }
-                },
-
-                "updateGranularity": 0.01,
-                        
-                "segmentSize": 1448,
-                "numOfCong": 0,
-                "congRate": 1.0,
-                "congArea": [0, 0, 10],
-                
-                "initEnbApPos": [
-                    [0, -3000, 0]
-                ],
-
-                "nRbs": 6,
-                "TcpSndBufSize": 102400,
-                "TcpRcvBufSize": 102400,
-                "CqiTimerThreshold": 10,
-                "LteTxPower": 0,
-                "p2pDataRate": "10Gb/s",
-                "p2pMtu": 1500,
-                "p2pDelay": 1e-3,
-                "useWifi": 0,
-                
-                "isMainLogEnabled": 1,
-                "isGcsLogEnabled": 0,
-                "isUavLogEnabled": 0,
-                "isCongLogEnabled": 0,
-                "isSyncLogEnabled": 0
-            }
+	"SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/master/docs/settings.md",
+	"SettingsVersion": 1.2,
+	"SimMode": "Multirotor",
+	"ClockSpeed": 1,
+	"CameraDefaults": {
+		"CaptureSettings": [
+			{
+				"ImageType": 0
+			}
+		]
+	},
+	"Vehicles": {
+		"A": {
+			"VehicleType": "SimpleFlight",
+			"X": 0,
+			"Y": 0,
+			"Z": 0,
+			"EnableTrace": true,
+			"Cameras" : {
+				"high_res": {
+					"CaptureSettings" : [
+						{
+							"ImageType" : 0,
+							"Width" : 720,
+							"Height" : 576
+						}
+					],
+					"X": 0.50, "Y": 0.00, "Z": 0.00,
+					"Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+				}
+			}
+		},
+		"B": {
+			"VehicleType": "SimpleFlight",
+			"X": 0,
+			"Y": -3,
+			"Z": 0,
+			"EnableTrace": true,
+			"Cameras" : {
+				"high_res": {
+					"CaptureSettings" : [
+						{
+							"ImageType" : 0,
+							"Width" : 720,
+							"Height" : 576
+						}
+					],
+					"X": 0.50, "Y": 0.00, "Z": 0.00,
+					"Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+				}
+			}
+		}
+	},
+	"updateGranularity": 0.01,
+	"segmentSize": 1448,
+	"numOfCong": 0,
+	"congRate": 1.0,
+	"congArea": [
+		0,
+		0,
+		10
+	],
+	"initEnbApPos": [
+		[
+			0,
+			0,
+			0
+		]
+	],
+	"nRbs": 6,
+	"TcpSndBufSize": 102400,
+	"TcpRcvBufSize": 102400,
+	"CqiTimerThreshold": 10,
+	"LteTxPower": 0,
+	"p2pDataRate": "10Gb/s",
+	"p2pMtu": 1500,
+	"p2pDelay": 1e-3,
+	"useWifi": 0,
+	"isMainLogEnabled": 1,
+	"isGcsLogEnabled": 0,
+	"isUavLogEnabled": 0,
+	"isCongLogEnabled": 0,
+	"isSyncLogEnabled": 0
+}
         '''
+        # Ctrl.Wait(5.0)
         if self.name == 'A':
             client = airsim.MultirotorClient()
             client.enableApiControl(True, vehicle_name=self.name)
@@ -177,9 +212,10 @@ class UavApp(UavAppBase):
             client.landAsync(vehicle_name=self.name).join()
             Ctrl.SetEndTime(Ctrl.GetSimTime() + 1.0)
     def customfn(self, *args, **kwargs):
-        self.pathfollower()
+        # self.pathfollower()
         # self.staticThroughputTest(0, 0.01)
         # self.windEffect()
+        pass
     def run(self, *args, **kwargs):
         self.beforeRun()
         self.customfn(*args, **kwargs)
@@ -191,6 +227,9 @@ class GcsApp(GcsAppBase):
         super().__init__(**kwargs)
         # any self.attribute that you need
     def pathfollower(self):
+        print('***********************')
+        print(f'Current Working dir {WORK_DIR}')
+        print('***********************')
         opt = detect.loadDefaultOpt()
         model = detect.loadModel(opt)
         
@@ -253,16 +292,16 @@ class GcsApp(GcsAppBase):
         client.simPause(False)
             
     def customfn(self, *args, **kwargs):
-        self.pathfollower()
+        # self.pathfollower()
         # self.staticThroughputTest()
         # self.windEffect()
+        pass
     def run(self, *args, **kwargs):
         self.beforeRun()
         self.customfn(*args, **kwargs)
         self.afterRun()
         print(f'{self.name} joined')
-        
-        
+
         
         
         
