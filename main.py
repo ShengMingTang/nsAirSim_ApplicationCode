@@ -24,9 +24,10 @@ ctrlThread.waitForSyncStart()
 # NS will wait until AirSim sends back something from now on
 
 ctrlThread.start()
-gcsThread.start()
+# gcsThread.start()
 for td in uavsThread:
     td.start()      
+gcsThread.run()
 
 ctrlThread.join()
 gcsThread.join()

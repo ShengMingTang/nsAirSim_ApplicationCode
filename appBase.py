@@ -39,7 +39,7 @@ class AppReceiver(threading.Thread):
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
         self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, IOTIMEO)
-    def recvMsg(self):
+    def recvMsg(self, block):
         '''
         return FIFO scheme complete MsgBase object in self.msgs if addressNotPrefixed
         return (addr, MsgBase) if address is prefixed      
@@ -47,11 +47,11 @@ class AppReceiver(threading.Thread):
         '''
         try:
             if self.isAddressPrefixed:
-                addr, data = self.msgs.get_nowait()
+                addr, data = self.msgs.get(block=block)
                 tid, bt = data
                 return (addr, self.msgProtocol[tid].Deserialize(bt))
             else:
-                data = self.msgs.get_nowait()
+                data = self.msgs.get(block=block)
                 tid, bt = data
                 return self.msgProtocol[tid].Deserialize(bt)
         except queue.Empty:
@@ -173,7 +173,7 @@ class AppBase(metaclass=abc.ABCMeta):
         self.srler = AppSerializer()
         self.recvThread = AppReceiver(context=context, msgProtocol=MsgProtocol, **kwargs)
         self.transmitSize = Ctrl.GetNetConfig()['TcpSndBufSize'] // 5
-    def Tx(self, obj, toName=None, flags=zmq.NOBLOCK):
+    def Tx(self, obj, toName=None, block=False):
         '''
         raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False) in both cases
         If obj is NOT iterable:
@@ -184,6 +184,7 @@ class AppBase(metaclass=abc.ABCMeta):
             r_i > 0 means that msg in this index is transmitted successfully
             r_i < 0 means it is not transmitted or network congested (cannot fit into buffer)
         '''
+        flags = zmq.NOBLOCK if block is False else 0
         try:
             sz = 0
             msgs = iter(obj)
@@ -228,14 +229,14 @@ class AppBase(metaclass=abc.ABCMeta):
             except zmq.ZMQError:
                 return -1
 
-    def Rx(self):
+    def Rx(self, block=False):
         '''
         return None if a complete MsgBase is not received
         else
         return MsgBase if isAddressPrefixed is False
         return (fromName, MsgBase) otherwise
         '''      
-        return self.recvThread.recvMsg()
+        return self.recvThread.recvMsg(block)
     def beforeRun(self):
         self.recvThread.start()
     def afterRun(self):
@@ -256,8 +257,8 @@ class AppBase(metaclass=abc.ABCMeta):
         self.customFn():
             # Add small amount of delay(1.0s) before transmitting anything in your target function
             # This is for ns to have time to set up everything
-            self.client.enableApiControl(True, vehicle_name=self.name)
-            self.client.armDisarm(True, vehicle_name=self.name)
+            client.enableApiControl(True, vehicle_name=self.name)
+            client.armDisarm(True, vehicle_name=self.name)
         '''
         return NotImplemented
 
@@ -271,9 +272,7 @@ class UavAppBase(AppBase, threading.Thread):
         kwargs['zmqRecvPort'] = NS2AIRSIM_PORT_START+iden
         super().__init__(**kwargs)
         self.name = name
-        self.client = airsim.MultirotorClient()
-        self.client.confirmConnection()
-               
+                       
     def selfTest(self, **kwargs):
         '''
         Basic utility test including Tx, Rx, MsgRaw
@@ -313,11 +312,13 @@ class UavAppBase(AppBase, threading.Thread):
         delay = 0.2
         Ctrl.Wait(delay)
         total = 0
-        pose = self.client.simGetVehiclePose(vehicle_name=self.name)
+        client = airsim.MultirotorClient()
+        client.confirmConnection()
+        pose = client.simGetVehiclePose(vehicle_name=self.name)
         pose.position.x_val = dist
         lastTx = Ctrl.GetSimTime()
         msg = MsgRaw(bytes(50*1024))
-        self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
+        client.simSetVehiclePose(pose, True, vehicle_name=self.name)
         t0 = Ctrl.GetSimTime()
         while Ctrl.ShouldContinue():
             Ctrl.Wait(period)
@@ -329,16 +330,18 @@ class UavAppBase(AppBase, threading.Thread):
         '''
         Test Msg Level streaming back to GCS
         '''
-        self.client.enableApiControl(True, vehicle_name=self.name)
-        self.client.armDisarm(True, vehicle_name=self.name)
+        client = airsim.MultirotorClient()
+        client.confirmConnection()
+        client.enableApiControl(True, vehicle_name=self.name)
+        client.armDisarm(True, vehicle_name=self.name)
         
         delay = 0.2
         Ctrl.Wait(delay)
-        # self.client.takeoffAsync(vehicle_name=self.name).join()
-        # self.client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
+        # client.takeoffAsync(vehicle_name=self.name).join()
+        # client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
         while Ctrl.ShouldContinue():
             Ctrl.Wait(0.1)
-            rawImage = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
+            rawImage = client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
             png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
             msg = MsgImg(png, Ctrl.GetSimTime())
             res = self.Tx(msg)
