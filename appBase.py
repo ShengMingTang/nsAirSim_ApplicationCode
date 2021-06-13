@@ -172,7 +172,7 @@ class AppBase(metaclass=abc.ABCMeta):
         self.zmqSendSocket.setsockopt(zmq.RCVTIMEO, 1000)
         self.srler = AppSerializer()
         self.recvThread = AppReceiver(context=context, msgProtocol=MsgProtocol, **kwargs)
-        self.transmitSize = Ctrl.GetNetConfig()['TcpSndBufSize'] // 5
+        self.transmitSize = Ctrl.GetNetConfig()['TcpSndBufSize']
     def Tx(self, obj, toName=None, block=False):
         '''
         raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False) in both cases
@@ -350,6 +350,7 @@ class UavAppBase(AppBase, threading.Thread):
     def run(self, **kwargs):
         self.beforeRun()
         self.selfTest()
+        # self.streamingTest();
         self.afterRun()
         print(f'{self.name} joined')
 class GcsAppBase(AppBase, threading.Thread):
@@ -418,7 +419,6 @@ class GcsAppBase(AppBase, threading.Thread):
         '''
         Test Msg Level streaming back to GCS
         '''
-        # @@ matplotlib lib is not thread safe, RuntimeError will be raised at the end of simulation
         delay = 0.1
         Ctrl.Wait(delay)
         fig = None
@@ -440,5 +440,6 @@ class GcsAppBase(AppBase, threading.Thread):
     def run(self, **kwargs):
         self.beforeRun()
         self.selfTest()
+        # self.streamingTest();
         self.afterRun()
         print(f'{self.name} joined')

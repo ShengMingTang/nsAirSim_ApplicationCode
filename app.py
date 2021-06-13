@@ -16,11 +16,11 @@ class UavApp(UavAppBase):
         # as your new target function
         pass
 
-    def run(self, *args, **kwargs):
-        self.beforeRun()
-        self.customfn(*args, **kwargs)
-        self.afterRun()
-        print(f'{self.name} joined')
+    # def run(self, *args, **kwargs):
+    #     self.beforeRun()
+    #     self.customfn(*args, **kwargs)
+    #     self.afterRun()
+    #     print(f'{self.name} joined')
         
 class GcsApp(GcsAppBase):
     def __init__(self, **kwargs):
@@ -31,8 +31,8 @@ class GcsApp(GcsAppBase):
         # as your new target function
         pass
 
-    def run(self, *args, **kwargs):
-        self.beforeRun()
-        self.customfn(*args, **kwargs)
-        self.afterRun()
-        print(f'{self.name} joined')
+    # def run(self, *args, **kwargs):
+    #     self.beforeRun()
+    #     self.customfn(*args, **kwargs)
+    #     self.afterRun()
+    #     print(f'{self.name} joined')
