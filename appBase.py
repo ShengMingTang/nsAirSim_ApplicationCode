@@ -39,7 +39,7 @@ class AppReceiver(threading.Thread):
         self.zmqRecvSocket = context.socket(zmq.PULL)
         self.zmqRecvSocket.connect(f'tcp://localhost:{zmqRecvPort}')
         self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, IOTIMEO)
-    def recvMsg(self):
+    def recvMsg(self, block):
         '''
         return FIFO scheme complete MsgBase object in self.msgs if addressNotPrefixed
         return (addr, MsgBase) if address is prefixed      
@@ -47,11 +47,11 @@ class AppReceiver(threading.Thread):
         '''
         try:
             if self.isAddressPrefixed:
-                addr, data = self.msgs.get_nowait()
+                addr, data = self.msgs.get(block=block)
                 tid, bt = data
                 return (addr, self.msgProtocol[tid].Deserialize(bt))
             else:
-                data = self.msgs.get_nowait()
+                data = self.msgs.get(block=block)
                 tid, bt = data
                 return self.msgProtocol[tid].Deserialize(bt)
         except queue.Empty:
@@ -173,7 +173,7 @@ class AppBase(metaclass=abc.ABCMeta):
         self.srler = AppSerializer()
         self.recvThread = AppReceiver(context=context, msgProtocol=MsgProtocol, **kwargs)
         self.transmitSize = Ctrl.GetNetConfig()['TcpSndBufSize'] // 5
-    def Tx(self, obj, toName=None, flags=zmq.NOBLOCK):
+    def Tx(self, obj, toName=None, block=False):
         '''
         raise TypeError if toName is specified in UAV mode (isAddressPrefixed set to False) in both cases
         If obj is NOT iterable:
@@ -184,6 +184,7 @@ class AppBase(metaclass=abc.ABCMeta):
             r_i > 0 means that msg in this index is transmitted successfully
             r_i < 0 means it is not transmitted or network congested (cannot fit into buffer)
         '''
+        flags = zmq.NOBLOCK if block is False else 0
         try:
             sz = 0
             msgs = iter(obj)
@@ -228,14 +229,14 @@ class AppBase(metaclass=abc.ABCMeta):
             except zmq.ZMQError:
                 return -1
 
-    def Rx(self):
+    def Rx(self, block=False):
         '''
         return None if a complete MsgBase is not received
         else
         return MsgBase if isAddressPrefixed is False
         return (fromName, MsgBase) otherwise
         '''      
-        return self.recvThread.recvMsg()
+        return self.recvThread.recvMsg(block)
     def beforeRun(self):
         self.recvThread.start()
     def afterRun(self):
