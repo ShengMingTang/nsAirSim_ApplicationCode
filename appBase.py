@@ -257,8 +257,8 @@ class AppBase(metaclass=abc.ABCMeta):
         self.customFn():
             # Add small amount of delay(1.0s) before transmitting anything in your target function
             # This is for ns to have time to set up everything
-            self.client.enableApiControl(True, vehicle_name=self.name)
-            self.client.armDisarm(True, vehicle_name=self.name)
+            client.enableApiControl(True, vehicle_name=self.name)
+            client.armDisarm(True, vehicle_name=self.name)
         '''
         return NotImplemented
 
@@ -272,9 +272,7 @@ class UavAppBase(AppBase, threading.Thread):
         kwargs['zmqRecvPort'] = NS2AIRSIM_PORT_START+iden
         super().__init__(**kwargs)
         self.name = name
-        self.client = airsim.MultirotorClient()
-        self.client.confirmConnection()
-               
+                       
     def selfTest(self, **kwargs):
         '''
         Basic utility test including Tx, Rx, MsgRaw
@@ -314,11 +312,13 @@ class UavAppBase(AppBase, threading.Thread):
         delay = 0.2
         Ctrl.Wait(delay)
         total = 0
-        pose = self.client.simGetVehiclePose(vehicle_name=self.name)
+        client = airsim.MultirotorClient()
+        client.confirmConnection()
+        pose = client.simGetVehiclePose(vehicle_name=self.name)
         pose.position.x_val = dist
         lastTx = Ctrl.GetSimTime()
         msg = MsgRaw(bytes(50*1024))
-        self.client.simSetVehiclePose(pose, True, vehicle_name=self.name)
+        client.simSetVehiclePose(pose, True, vehicle_name=self.name)
         t0 = Ctrl.GetSimTime()
         while Ctrl.ShouldContinue():
             Ctrl.Wait(period)
@@ -330,16 +330,18 @@ class UavAppBase(AppBase, threading.Thread):
         '''
         Test Msg Level streaming back to GCS
         '''
-        self.client.enableApiControl(True, vehicle_name=self.name)
-        self.client.armDisarm(True, vehicle_name=self.name)
+        client = airsim.MultirotorClient()
+        client.confirmConnection()
+        client.enableApiControl(True, vehicle_name=self.name)
+        client.armDisarm(True, vehicle_name=self.name)
         
         delay = 0.2
         Ctrl.Wait(delay)
-        # self.client.takeoffAsync(vehicle_name=self.name).join()
-        # self.client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
+        # client.takeoffAsync(vehicle_name=self.name).join()
+        # client.moveByVelocityBodyFrameAsync(5, 0, 0, 20, vehicle_name=self.name)
         while Ctrl.ShouldContinue():
             Ctrl.Wait(0.1)
-            rawImage = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
+            rawImage = client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.name)
             png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
             msg = MsgImg(png, Ctrl.GetSimTime())
             res = self.Tx(msg)
