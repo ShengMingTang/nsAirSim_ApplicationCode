@@ -30,7 +30,7 @@ for td in uavsThread:
 gcsThread.run()
 
 ctrlThread.join()
-gcsThread.join()
+# gcsThread.join()
 for td in uavsThread:
     td.join()
 

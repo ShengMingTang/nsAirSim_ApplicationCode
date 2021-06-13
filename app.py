@@ -214,7 +214,7 @@ class UavApp(UavAppBase):
     def customfn(self, *args, **kwargs):
         # self.pathfollower()
         # self.staticThroughputTest(0, 0.01)
-        # self.windEffect()
+        self.windEffect()
         pass
     def run(self, *args, **kwargs):
         self.beforeRun()
@@ -294,7 +294,7 @@ class GcsApp(GcsAppBase):
     def customfn(self, *args, **kwargs):
         # self.pathfollower()
         # self.staticThroughputTest()
-        # self.windEffect()
+        self.windEffect()
         pass
     def run(self, *args, **kwargs):
         self.beforeRun()
