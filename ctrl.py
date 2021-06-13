@@ -269,7 +269,8 @@ class Ctrl(threading.Thread):
         s += f'{netConfig["isMainLogEnabled"]} {netConfig["isGcsLogEnabled"]} {netConfig["isUavLogEnabled"]} {netConfig["isCongLogEnabled"]} {netConfig["isSyncLogEnabled"]} '
         
         self.zmqSendSocket.send_string(s)
-        self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, int(10*1000*netConfig["updateGranularity"]))
+        # rm timeout
+        # self.zmqRecvSocket.setsockopt(zmq.RCVTIMEO, int(10*1000*netConfig["updateGranularity"]))
         self.netConfig = netConfig
         Ctrl.netConfig = netConfig
         Ctrl.SetEndTime(netConfig["endTime"])
